@@ -3,10 +3,11 @@ import https from "https";
 let price = null;
 let lastUpdate = 0;
 
-const fetchREST = () => {
+// ✅ Coinbase price fetch (VERY reliable)
+const fetchPrice = () => {
     return new Promise((resolve) => {
         https.get(
-            "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT",
+            "https://api.exchange.coinbase.com/products/ETH-USD/ticker",
             (res) => {
                 let data = "";
 
@@ -14,36 +15,39 @@ const fetchREST = () => {
                 res.on("end", () => {
                     try {
                         const json = JSON.parse(data);
-                        const p = parseFloat(json.price);
-                        resolve(p);
+                        resolve(parseFloat(json.price));
                     } catch {
                         resolve(null);
                     }
                 });
             }
         ).on("error", (err) => {
-            console.log("❌ REST error:", err.message);
+            console.log("❌ Coinbase API error:", err.message);
             resolve(null);
         });
     });
 };
 
 export const startFeed = async () => {
-    console.log("🚀 Starting REST feed...");
+    console.log("🚀 Starting Coinbase feed...");
 
-    // 🔥 immediate fetch (CRITICAL)
-    const first = await fetchREST();
-    if (first) {
-        price = first;
-        lastUpdate = Date.now();
-        console.log("✅ FIRST PRICE:", first);
-    } else {
-        console.log("❌ Initial price fetch failed");
+    // 🔥 FORCE FIRST PRICE (critical)
+    while (!price) {
+        const p = await fetchPrice();
+
+        if (p) {
+            price = p;
+            lastUpdate = Date.now();
+            console.log("✅ FIRST PRICE:", p);
+        } else {
+            console.log("⏳ Retrying price fetch...");
+            await new Promise(r => setTimeout(r, 1000));
+        }
     }
 
-    // loop
+    // continuous updates
     setInterval(async () => {
-        const p = await fetchREST();
+        const p = await fetchPrice();
 
         if (p) {
             price = p;
