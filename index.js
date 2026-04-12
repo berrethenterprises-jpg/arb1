@@ -20,7 +20,8 @@ const loop = async () => {
     while (true) {
         try {
             const cex = getLivePrice();
-            if (!cex || cex.latency > 200) {
+
+            if (!cex || cex.latency > 500) {
                 await sleep(100);
                 continue;
             }
@@ -40,16 +41,31 @@ const loop = async () => {
                 liquidity +
                 alpha;
 
+            // Latency compensation
             score *= (1 - cex.latency / 100);
 
-            if (!shouldTrade({
-                spread,
-                liquidity,
-                latency: cex.latency,
-                score
-            })) {
-                await sleep(CONFIG.LOOP_DELAY);
-                continue;
+            // REST boost
+            if (cex.latency > 100) {
+                score *= 1.2;
+            }
+
+            const isREST = cex.latency > 100;
+
+            if (isREST) {
+                if (spread < 0.002) {
+                    await sleep(CONFIG.LOOP_DELAY);
+                    continue;
+                }
+            } else {
+                if (!shouldTrade({
+                    spread,
+                    liquidity,
+                    latency: cex.latency,
+                    score
+                })) {
+                    await sleep(CONFIG.LOOP_DELAY);
+                    continue;
+                }
             }
 
             const size = Math.min(
