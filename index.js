@@ -1,141 +1,101 @@
+import "dotenv/config";
+import fetch from "node-fetch";
 import { ethers } from "ethers";
-import https from "https";
 import { getUniswapPrice } from "./dex/uniswap.js";
 
-// 🔥 CONFIG
-const CONFIG = {
-    MIN_SPREAD: 0.001,      // 0.1% (realistic for testing)
-    TRADE_SIZE: 1000,
-    GAS_COST: 10,
-    LOOP_DELAY: 1000
+// ================= CONFIG =================
+const RPC_URL = process.env.RPC_URL;
+const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+
+const LOOP_DELAY = 1500; // ms
+const MIN_SPREAD = 0.002; // 0.2% realistic threshold
+
+let totalPNL = 0;
+let trades = 0;
+
+// ================= CEX PRICE =================
+const getCEXPrice = async () => {
+  try {
+    const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot");
+    const json = await res.json();
+
+    const price = parseFloat(json?.data?.amount);
+
+    if (!price || isNaN(price)) return null;
+
+    return price;
+  } catch {
+    return null;
+  }
 };
 
-// 🔥 PROVIDER
-const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+// ================= SAFE NUMBER =================
+const isValid = (n) => typeof n === "number" && !isNaN(n) && isFinite(n);
 
-let rpcReady = false;
+// ================= MAIN LOOP =================
+const runBot = async () => {
+  console.log("🚀 ARB1 MULTI-POOL ENGINE STARTED");
 
-const initRPC = async () => {
-    while (!rpcReady) {
-        try {
-            const block = await provider.getBlockNumber();
-            console.log("✅ RPC connected | Block:", block);
-            rpcReady = true;
-        } catch {
-            console.log("❌ RPC failed — retrying...");
-            await sleep(3000);
-        }
-    }
-};
-
-await initRPC();
-
-console.log("🚀 ARB1 v23 MULTI-PAIR ENGINE STARTED");
-
-// 🔥 FETCH UTIL
-const fetchJSON = (url) => {
-    return new Promise((resolve) => {
-        https.get(url, (res) => {
-            let data = "";
-
-            res.on("data", chunk => data += chunk);
-
-            res.on("end", () => {
-                try {
-                    resolve(JSON.parse(data));
-                } catch {
-                    resolve(null);
-                }
-            });
-        }).on("error", () => resolve(null));
-    });
-};
-
-// 🔥 CEX PRICES
-const getCEXPrices = async () => {
+  while (true) {
     try {
-        const [eth, btc] = await Promise.all([
-            fetchJSON("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
-            fetchJSON("https://api.exchange.coinbase.com/products/BTC-USD/ticker")
-        ]);
+      // ===== FETCH PRICES =====
+      const [dexPrice, cexPrice] = await Promise.all([
+        getUniswapPrice(provider),
+        getCEXPrice()
+      ]);
 
-        return {
-            ETH: parseFloat(eth?.price) || null,
-            BTC: parseFloat(btc?.price) || null
-        };
-    } catch {
-        return { ETH: null, BTC: null };
-    }
-};
+      console.log("🧪 RAW:", { dexPrice, cexPrice });
 
-// 🔥 PROFIT CALC
-const calculateProfit = (spread) => {
-    const gross = CONFIG.TRADE_SIZE * Math.abs(spread);
-    const dexFee = CONFIG.TRADE_SIZE * 0.003;
+      // ===== VALIDATION =====
+      if (!isValid(dexPrice) || !isValid(cexPrice)) {
+        console.log("⏳ Waiting for valid price data...");
+        await delay(LOOP_DELAY);
+        continue;
+      }
 
-    return gross - dexFee - CONFIG.GAS_COST;
-};
+      // ===== SPREAD =====
+      const spread = (dexPrice - cexPrice) / cexPrice;
 
-// 🔥 LOOP UTIL
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      console.log(
+        `📊 BEST DEX: ${dexPrice.toFixed(2)} | CEX: ${cexPrice.toFixed(2)} | Spread: ${spread.toFixed(5)}`
+      );
 
-// 🔥 MAIN ENGINE
-const run = async () => {
+      // ===== FILTER BAD DATA =====
+      if (Math.abs(spread) > 0.05) {
+        console.log("🚫 Ignoring unrealistic spread");
+        await delay(LOOP_DELAY);
+        continue;
+      }
 
-    while (true) {
-        try {
+      // ===== TRADE CONDITION =====
+      if (spread > MIN_SPREAD) {
+        const tradeSize = 100; // simulated size
+        const profit = tradeSize * spread;
 
-            if (!rpcReady) {
-                console.log("⏳ Waiting for RPC...");
-                await sleep(1000);
-                continue;
-            }
-
-            const [dexPrice, cex] = await Promise.all([
-                getUniswapPrice(provider),
-                getCEXPrices()
-            ]);
-
-            console.log("🧪 RAW:", {
-                dexPrice,
-                cexETH: cex.ETH,
-                cexBTC: cex.BTC
-            });
-
-            if (!dexPrice || !cex.ETH) {
-                console.log("⏳ Waiting for valid prices...");
-                await sleep(CONFIG.LOOP_DELAY);
-                continue;
-            }
-
-            const spread = (dexPrice - cex.ETH) / cex.ETH;
-
-            console.log(
-                `📊 ETH → DEX: ${dexPrice.toFixed(2)} | CEX: ${cex.ETH.toFixed(2)} | Spread: ${spread.toFixed(5)}`
-            );
-
-            if (Math.abs(spread) < CONFIG.MIN_SPREAD) {
-                await sleep(CONFIG.LOOP_DELAY);
-                continue;
-            }
-
-            const profit = calculateProfit(spread);
-
-            if (profit <= 0 || isNaN(profit)) {
-                console.log("❌ Not profitable after fees");
-                await sleep(CONFIG.LOOP_DELAY);
-                continue;
-            }
-
-            console.log("🔥 ARB OPPORTUNITY");
-            console.log(`💰 Profit: $${profit.toFixed(2)}`);
-
-        } catch (e) {
-            console.log("❌ LOOP ERROR:", e.message);
+        if (!isValid(profit)) {
+          console.log("❌ Invalid profit calc");
+          await delay(LOOP_DELAY);
+          continue;
         }
 
-        await sleep(CONFIG.LOOP_DELAY);
+        totalPNL += profit;
+        trades++;
+
+        console.log("🔥 ARB OPPORTUNITY FOUND");
+        console.log(`💰 Profit: $${profit.toFixed(2)}`);
+        console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
+      }
+
+    } catch (err) {
+      console.log("❌ LOOP ERROR:", err.message);
     }
+
+    await delay(LOOP_DELAY);
+  }
 };
 
-run();
+// ================= DELAY =================
+const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// ================= START =================
+runBot();
