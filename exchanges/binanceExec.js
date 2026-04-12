@@ -6,12 +6,8 @@ const API_SECRET = process.env.BINANCE_SECRET;
 
 const BASE = "https://api.binance.com";
 
-const sign = (query) => {
-    return crypto
-        .createHmac("sha256", API_SECRET)
-        .update(query)
-        .digest("hex");
-};
+const sign = (query) =>
+    crypto.createHmac("sha256", API_SECRET).update(query).digest("hex");
 
 export const placeOrder = async (symbol, side, quantity) => {
     const timestamp = Date.now();
@@ -24,12 +20,10 @@ export const placeOrder = async (symbol, side, quantity) => {
     return new Promise((resolve) => {
         const req = https.request(url, {
             method: "POST",
-            headers: {
-                "X-MBX-APIKEY": API_KEY
-            }
+            headers: { "X-MBX-APIKEY": API_KEY }
         }, (res) => {
             let data = "";
-            res.on("data", chunk => data += chunk);
+            res.on("data", c => data += c);
             res.on("end", () => resolve(JSON.parse(data)));
         });
 
