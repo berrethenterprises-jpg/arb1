@@ -1,13 +1,8 @@
-export const findOpportunity = (prices) => {
-    const { coinbase, binance } = prices;
-
-    if (!coinbase || !binance) return null;
-
+export const findOpportunity = ({ coinbase, binance }) => {
     const spread = (coinbase - binance) / binance;
 
     return {
         spread,
-        buy: spread > 0 ? "binance" : "coinbase",
-        sell: spread > 0 ? "coinbase" : "binance"
+        direction: spread > 0 ? "BUY_BINANCE_SELL_COINBASE" : "BUY_COINBASE_SELL_BINANCE"
     };
 };
