@@ -1,0 +1,13 @@
+{
+  "name": "arb1-v16",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0",
+    "dotenv": "^16.4.0"
+  }
+}
