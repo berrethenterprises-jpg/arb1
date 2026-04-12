@@ -1,29 +1,36 @@
-import { ethers } from "ethers";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 
 export const initFlashbots = async (provider, wallet) => {
-    return await FlashbotsBundleProvider.create(provider, wallet);
-};
-
-export const sendBundle = async ({
-    flashbots,
-    tx,
-    wallet
-}) => {
-
-    const signed = await wallet.signTransaction(tx);
-
-    const bundle = [{ signedTransaction: signed }];
-
-    const block = await flashbots.provider.getBlockNumber();
-
-    // 🔥 ROXY FIX: simulate before sending
-    const sim = await flashbots.simulate(bundle, block + 1);
-
-    if ("error" in sim) {
-        console.log("❌ Simulation failed");
+    try {
+        const fb = await FlashbotsBundleProvider.create(provider, wallet);
+        return fb;
+    } catch (e) {
+        console.log("⚠️ Flashbots init failed:", e.message);
         return null;
     }
+};
 
-    return await flashbots.sendBundle(bundle, block + 1);
+export const sendBundle = async ({ flashbots, tx, wallet }) => {
+    try {
+        if (!flashbots) return null;
+
+        const signed = await wallet.signTransaction(tx);
+
+        const bundle = [{ signedTransaction: signed }];
+
+        const block = await flashbots.provider.getBlockNumber();
+
+        const sim = await flashbots.simulate(bundle, block + 1);
+
+        if ("error" in sim) {
+            console.log("❌ Flashbots simulation failed");
+            return null;
+        }
+
+        return await flashbots.sendBundle(bundle, block + 1);
+
+    } catch (e) {
+        console.log("❌ Flashbots error:", e.message);
+        return null;
+    }
 };
