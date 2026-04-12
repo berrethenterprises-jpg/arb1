@@ -3,7 +3,6 @@ import https from "https";
 let price = null;
 let lastUpdate = 0;
 
-// REST fetch (primary source now)
 const fetchREST = () => {
     return new Promise((resolve) => {
         https.get(
@@ -15,31 +14,45 @@ const fetchREST = () => {
                 res.on("end", () => {
                     try {
                         const json = JSON.parse(data);
-                        resolve(parseFloat(json.price));
+                        const p = parseFloat(json.price);
+                        resolve(p);
                     } catch {
                         resolve(null);
                     }
                 });
             }
-        ).on("error", () => resolve(null));
+        ).on("error", (err) => {
+            console.log("❌ REST error:", err.message);
+            resolve(null);
+        });
     });
 };
 
-// Start feed (REST only — stable)
-export const startFeed = () => {
+export const startFeed = async () => {
+    console.log("🚀 Starting REST feed...");
+
+    // 🔥 immediate fetch (CRITICAL)
+    const first = await fetchREST();
+    if (first) {
+        price = first;
+        lastUpdate = Date.now();
+        console.log("✅ FIRST PRICE:", first);
+    } else {
+        console.log("❌ Initial price fetch failed");
+    }
+
+    // loop
     setInterval(async () => {
         const p = await fetchREST();
 
         if (p) {
             price = p;
             lastUpdate = Date.now();
-
             console.log("🔁 PRICE:", p);
         }
     }, 1000);
 };
 
-// Getter
 export const getLivePrice = () => {
     if (!price) return null;
 
