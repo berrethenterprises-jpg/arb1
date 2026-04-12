@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
+import https from "https";
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
@@ -18,9 +19,9 @@ let state = {
     executing: false
 };
 
-console.log("🚀 ARB1 FIXED ENGINE STARTED");
+console.log("🚀 ARB1 FINAL ENGINE STARTED");
 
-// ✅ SAFE FLASHBOTS INIT
+// 🔥 SAFE FLASHBOTS INIT
 (async () => {
     try {
         flashbots = await FlashbotsBundleProvider.create(provider, wallet);
@@ -31,30 +32,44 @@ console.log("🚀 ARB1 FIXED ENGINE STARTED");
 })();
 
 
-// 🔥 SAFE PRICE FETCH (FIXED)
+// 🔥 SAFE HTTP FETCH (FIXED)
+const fetchJSON = (url) => {
+    return new Promise((resolve) => {
+        https.get(url, (res) => {
+            let data = "";
+
+            res.on("data", chunk => data += chunk);
+
+            res.on("end", () => {
+                try {
+                    resolve(JSON.parse(data));
+                } catch {
+                    resolve(null);
+                }
+            });
+        }).on("error", () => resolve(null));
+    });
+};
+
+
+// 🔥 FIXED PRICE FETCH
 const getPrices = async () => {
-    try {
-        const [cbRes, bnRes] = await Promise.all([
-            fetch("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
-            fetch("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT")
-        ]);
 
-        const cb = await cbRes.json();
-        const bn = await bnRes.json();
+    const [cb, bn] = await Promise.all([
+        fetchJSON("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
+        fetchJSON("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT")
+    ]);
 
-        const coinbase = parseFloat(cb.price);
-        const binance = parseFloat(bn.price);
+    if (!cb || !bn) return null;
 
-        // 🔥 HARD VALIDATION (CRITICAL FIX)
-        if (!coinbase || !binance || isNaN(coinbase) || isNaN(binance)) {
-            return null;
-        }
+    const coinbase = parseFloat(cb.price);
+    const binance = parseFloat(bn.price);
 
-        return { coinbase, binance };
-
-    } catch {
+    if (!coinbase || !binance || isNaN(coinbase) || isNaN(binance)) {
         return null;
     }
+
+    return { coinbase, binance };
 };
 
 
@@ -74,7 +89,7 @@ const run = async () => {
             const prices = await getPrices();
 
             if (!prices) {
-                console.log("⏳ Invalid price data, skipping...");
+                console.log("⏳ Waiting for valid prices...");
                 await sleep(500);
                 continue;
             }
@@ -86,7 +101,6 @@ const run = async () => {
                 `📊 CB: ${prices.coinbase.toFixed(2)} | BN: ${prices.binance.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
-            // 🔥 VALIDATE SPREAD
             if (isNaN(spread) || Math.abs(spread) < CONFIG.MIN_SPREAD) {
                 await sleep(200);
                 continue;
@@ -99,7 +113,6 @@ const run = async () => {
 
             const profit = gross - fees - CONFIG.GAS_COST_USD;
 
-            // 🔥 VALIDATE PROFIT
             if (isNaN(profit) || profit <= 0) {
                 console.log("❌ Not profitable");
                 await sleep(200);
@@ -151,7 +164,6 @@ const run = async () => {
             state.executing = false;
         }
 
-        // 🔥 RATE LIMIT FIX
         await sleep(500);
     }
 };
