@@ -1,116 +1,91 @@
 import { CONFIG } from "./config.js";
-import { startFeed, getLivePrice } from "./exchanges/cexFeed.js";
-import { getDEXQuote } from "./exchanges/dex.js";
-import { getAlpha, updatePrice, recordResult } from "./utils/alphaEngine.js";
-import { shouldTrade } from "./utils/risk.js";
+import { getPrices } from "./exchanges/multiFeed.js";
+import { findOpportunity } from "./utils/arbitrageEngine.js";
 
 let state = {
     balance: CONFIG.START_BALANCE,
     pnl: 0,
-    trades: 0,
-    lossStreak: 0
+    trades: 0
 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const loop = async () => {
-    console.log("🧠 Bot loop starting...");
-
-    await startFeed();
-
-    console.log("✅ Feed initialized, entering trading loop...");
+    console.log("🚀 Multi-Exchange Arb Engine Started");
 
     while (true) {
         try {
-            const cex = getLivePrice();
+            const prices = await getPrices();
 
-            if (!cex) {
-                console.log("⏳ Waiting for price...");
+            if (!prices.coinbase || !prices.binance) {
+                console.log("⏳ Waiting for prices...");
+                await sleep(500);
+                continue;
+            }
+
+            console.log(`📊 Coinbase: ${prices.coinbase} | Binance: ${prices.binance}`);
+
+            const opp = findOpportunity(prices);
+
+            if (!opp) {
                 await sleep(200);
                 continue;
             }
 
-            console.log(`📊 Price: ${cex.price.toFixed(2)} | Latency: ${cex.latency}ms`);
+            console.log(`🔍 Spread: ${opp.spread.toFixed(4)} | Buy: ${opp.buy} | Sell: ${opp.sell}`);
 
-            const dex = await getDEXQuote(cex.price);
-
-            updatePrice(cex.price);
-
-            const spread = (cex.price - dex.price) / dex.price;
-            const liquidity = dex.liquidity;
-            const volatility = Math.abs(spread);
-
-            const alpha = getAlpha(volatility, state.lossStreak);
-
-            let score =
-                spread * 4 +
-                liquidity * 1.2 +
-                alpha;
-
-            console.log(
-                `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
-            );
-
-            if (!shouldTrade({ spread, liquidity, score })) {
-                console.log("❌ Skipped trade (filters)");
-                await sleep(CONFIG.LOOP_DELAY);
+            // 🔥 FILTER
+            if (Math.abs(opp.spread) < 0.001) {
+                console.log("❌ No edge");
+                await sleep(200);
                 continue;
             }
 
-            // 🔥 PARTIAL FILLS
-            let size = Math.min(
-                Math.sqrt(state.balance) * CONFIG.BASE_SIZE_FACTOR,
-                liquidity * 1500
-            );
+            // 🔥 FLASH LOAN SIMULATION (LEVERAGE)
+            const leverage = 5; // simulate flash loan
+            const capital = state.balance * leverage;
 
-            const fillPercent = 0.7 + Math.random() * 0.3;
-            size *= fillPercent;
+            // 🔥 COSTS
+            const feeRate = 0.001;
+            const slippage = 0.001;
+
+            const gross = capital * Math.abs(opp.spread);
+
+            const fees = capital * feeRate * 2;
+            const slip = capital * slippage;
+
+            let profit = gross - fees - slip;
 
             // 🔥 EXECUTION FAILURE
             if (Math.random() < 0.1) {
-                console.log("⚠️ Trade failed (execution)");
-                await sleep(CONFIG.LOOP_DELAY);
+                console.log("⚠️ Execution failed");
+                await sleep(200);
                 continue;
             }
 
-            // 🔥 REALISTIC PROFIT CALC
-            const feeRate = 0.001;     // 0.1% per side
-            const slippage = 0.0008;   // 0.08%
-
-            const grossProfit = size * score * 0.0025;
-
-            const fees = size * feeRate * 2;
-            const slip = size * slippage;
-
-            let profit = grossProfit - fees - slip;
-
-            // 🔥 LOSS SIMULATION
-            if (Math.random() < 0.15) {
-                const loss = Math.abs(profit) * (0.5 + Math.random());
-                state.balance -= loss;
-                state.pnl -= loss;
-                state.lossStreak++;
-
-                console.log(`❌ LOSS TRADE | -$${loss.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`);
-                await sleep(CONFIG.LOOP_DELAY);
+            // 🔥 LOSS PROTECTION
+            if (profit <= 0) {
+                console.log("❌ Unprofitable after costs");
+                await sleep(200);
                 continue;
             }
+
+            // 🔥 RISK LIMIT
+            const tradeSize = Math.min(state.balance * 0.2, capital);
+
+            profit *= (tradeSize / capital);
 
             state.balance += profit;
             state.pnl += profit;
             state.trades++;
 
-            recordResult(profit);
-
-            console.log(
-                `📈 TRADE EXECUTED | Profit: $${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)} | Trades: ${state.trades}`
-            );
+            console.log(`📈 ARB TRADE | +$${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`);
 
         } catch (e) {
-            console.log("❌ Error:", e.message);
+            console.log("Error:", e.message);
         }
 
-        await sleep(CONFIG.LOOP_DELAY);
+        await sleep(200);
     }
 };
 
