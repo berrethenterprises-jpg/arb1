@@ -1,68 +1,65 @@
-import { CONFIG } from "./config.js";
-import { getPrices } from "./exchanges/multiFeed.js";
-import { findOpportunity } from "./utils/arbitrageEngine.js";
-import { simulateExecution } from "./utils/executionSim.js";
+import { runMultiPoolEngine } from "./engine/multiPoolEngine.js";
+import { POOLS } from "./config/pools.js";
+import { executeArb } from "./execution/arbExecutor.js";
+import { isProfitable } from "./utils/profitEngine.js";
 
-const PAIRS = ["ETHUSDT", "BTCUSDT"];
-
-let state = {
-    balance: CONFIG.START_BALANCE,
-    pnl: 0,
-    trades: 0
+const CONFIG = {
+    MIN_SPREAD: 0.0012,
+    TRADE_SIZE: 1000,
+    GAS_ESTIMATE: 15, // USD estimate
 };
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+console.log("🚀 ARB1 v18 ENGINE STARTED");
 
-const loop = async () => {
-    console.log("🚀 ARB1 v17 Multi-Exchange Engine Started");
+runMultiPoolEngine({
+    config: POOLS,
 
-    while (true) {
+    onOpportunity: async (opp) => {
         try {
-            for (const pair of PAIRS) {
+            const { pair, spread, cex, dex } = opp;
 
-                const prices = await getPrices(pair);
+            console.log(`🔥 ${pair} Opportunity`);
+            console.log(`CEX: ${cex} | DEX: ${dex}`);
+            console.log(`Spread: ${spread.toFixed(5)}`);
 
-                if (!prices) {
-                    console.log(`⏳ ${pair} no data`);
-                    continue;
-                }
-
-                console.log(`📊 ${pair} | C: ${prices.coinbase} | B: ${prices.binance}`);
-
-                const opp = findOpportunity(prices);
-
-                console.log(`🔍 Spread: ${opp.spread.toFixed(4)}`);
-
-                if (Math.abs(opp.spread) < CONFIG.MIN_SPREAD) {
-                    continue;
-                }
-
-                const capital = state.balance * CONFIG.TRADE_SIZE_PCT;
-
-                const exec = simulateExecution(capital, opp.spread);
-
-                if (!exec.success) {
-                    console.log("⚠️ Execution failed");
-                    continue;
-                }
-
-                if (exec.profit <= 0) {
-                    console.log(`❌ Loss: $${exec.profit.toFixed(2)}`);
-                } else {
-                    console.log(`📈 Profit: $${exec.profit.toFixed(2)}`);
-                }
-
-                state.balance += exec.profit;
-                state.pnl += exec.profit;
-                state.trades++;
+            // 🔥 HARD FILTER (ROXY FIX)
+            if (Math.abs(spread) < CONFIG.MIN_SPREAD) {
+                return;
             }
 
+            const tradeSize = CONFIG.TRADE_SIZE;
+
+            // 🔥 PROFIT CHECK (CRITICAL)
+            const profitable = isProfitable({
+                spread: Math.abs(spread),
+                gasCost: CONFIG.GAS_ESTIMATE,
+                tradeSize
+            });
+
+            if (!profitable) {
+                console.log("❌ Not profitable after gas/fees");
+                return;
+            }
+
+            // 🔥 DIRECTION LOGIC
+            const direction =
+                spread > 0
+                    ? "BUY_DEX_SELL_CEX"
+                    : "BUY_CEX_SELL_DEX";
+
+            console.log(`⚡ Direction: ${direction}`);
+
+            // 🔥 EXECUTION
+            await executeArb({
+                tokenIn: "WETH",
+                tokenOut: "USDC",
+                fee: 3000,
+                amountIn: tradeSize,
+                expectedOut: tradeSize * (1 + Math.abs(spread))
+            });
+
         } catch (e) {
-            console.log("Error:", e.message);
+            console.log("❌ Execution error:", e.message);
         }
-
-        await sleep(CONFIG.LOOP_DELAY);
     }
-};
-
-loop();
+});
