@@ -13,15 +13,9 @@ const CONFIG = {
     GAS_COST_USD: 15
 };
 
-let state = {
-    trades: 0,
-    pnl: 0,
-    executing: false
-};
-
 console.log("🚀 ARB1 FINAL ENGINE STARTED");
 
-// 🔥 SAFE FLASHBOTS INIT
+// 🔥 FLASHBOTS
 (async () => {
     try {
         flashbots = await FlashbotsBundleProvider.create(provider, wallet);
@@ -29,10 +23,10 @@ console.log("🚀 ARB1 FINAL ENGINE STARTED");
     } catch {
         console.log("⚠️ Flashbots disabled");
     }
-})();
+});
 
 
-// 🔥 SAFE HTTP FETCH (FIXED)
+// 🔥 SAFE HTTP
 const fetchJSON = (url) => {
     return new Promise((resolve) => {
         https.get(url, (res) => {
@@ -52,24 +46,43 @@ const fetchJSON = (url) => {
 };
 
 
-// 🔥 FIXED PRICE FETCH
+// 🔥 MULTI-SOURCE PRICE ENGINE (FIXED)
 const getPrices = async () => {
 
-    const [cb, bn] = await Promise.all([
+    const [coinbase, binance, coingecko] = await Promise.all([
         fetchJSON("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
-        fetchJSON("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT")
+        fetchJSON("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT"),
+        fetchJSON("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd")
     ]);
 
-    if (!cb || !bn) return null;
+    let cb = coinbase?.price;
+    let bn = binance?.price;
+    let cg = coingecko?.ethereum?.usd;
 
-    const coinbase = parseFloat(cb.price);
-    const binance = parseFloat(bn.price);
+    // 🔥 FALLBACK LOGIC
+    const coinbasePrice = parseFloat(cb || cg);
+    const binancePrice = parseFloat(bn || cg);
 
-    if (!coinbase || !binance || isNaN(coinbase) || isNaN(binance)) {
+    // DEBUG LOG
+    console.log("🧪 RAW:", {
+        cb,
+        bn,
+        cg
+    });
+
+    if (
+        !coinbasePrice ||
+        !binancePrice ||
+        isNaN(coinbasePrice) ||
+        isNaN(binancePrice)
+    ) {
         return null;
     }
 
-    return { coinbase, binance };
+    return {
+        coinbase: coinbasePrice,
+        binance: binancePrice
+    };
 };
 
 
@@ -81,16 +94,11 @@ const run = async () => {
     while (true) {
         try {
 
-            if (state.executing) {
-                await sleep(200);
-                continue;
-            }
-
             const prices = await getPrices();
 
             if (!prices) {
                 console.log("⏳ Waiting for valid prices...");
-                await sleep(500);
+                await sleep(1000);
                 continue;
             }
 
@@ -101,70 +109,11 @@ const run = async () => {
                 `📊 CB: ${prices.coinbase.toFixed(2)} | BN: ${prices.binance.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
-            if (isNaN(spread) || Math.abs(spread) < CONFIG.MIN_SPREAD) {
-                await sleep(200);
-                continue;
-            }
-
-            const tradeValue = CONFIG.TRADE_SIZE * prices.binance;
-
-            const gross = tradeValue * Math.abs(spread);
-            const fees = tradeValue * 0.002;
-
-            const profit = gross - fees - CONFIG.GAS_COST_USD;
-
-            if (isNaN(profit) || profit <= 0) {
-                console.log("❌ Not profitable");
-                await sleep(200);
-                continue;
-            }
-
-            state.executing = true;
-
-            console.log(`⚡ TRADE FOUND | Profit: $${profit.toFixed(2)}`);
-
-            if (flashbots) {
-                try {
-                    const tx = {
-                        to: wallet.address,
-                        value: 0,
-                        gasLimit: 21000
-                    };
-
-                    const signed = await wallet.signTransaction(tx);
-                    const bundle = [{ signedTransaction: signed }];
-
-                    const block = await provider.getBlockNumber();
-
-                    const sim = await flashbots.simulate(bundle, block + 1);
-
-                    if (!("error" in sim)) {
-                        await flashbots.sendBundle(bundle, block + 1);
-                        console.log("✅ Trade executed");
-                    } else {
-                        console.log("❌ Simulation failed");
-                    }
-
-                } catch (e) {
-                    console.log("❌ Execution error:", e.message);
-                }
-            }
-
-            state.trades++;
-            state.pnl += profit;
-
-            console.log(
-                `📈 TOTAL PNL: $${state.pnl.toFixed(2)} | Trades: ${state.trades}`
-            );
-
-            state.executing = false;
-
         } catch (e) {
-            console.log("❌ LOOP ERROR:", e.message);
-            state.executing = false;
+            console.log("❌ ERROR:", e.message);
         }
 
-        await sleep(500);
+        await sleep(1000);
     }
 };
 
