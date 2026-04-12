@@ -42,7 +42,6 @@ const loop = async () => {
 
             const alpha = getAlpha(volatility, state.lossStreak);
 
-            // 🔥 improved scoring
             let score =
                 spread * 4 +
                 liquidity * 1.2 +
@@ -52,21 +51,50 @@ const loop = async () => {
                 `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
             );
 
-            // 🔥 strict + smart filtering
             if (!shouldTrade({ spread, liquidity, score })) {
                 console.log("❌ Skipped trade (filters)");
                 await sleep(CONFIG.LOOP_DELAY);
                 continue;
             }
 
-            // 🔥 dynamic sizing (scaled up)
-            const size = Math.min(
+            // 🔥 PARTIAL FILLS
+            let size = Math.min(
                 Math.sqrt(state.balance) * CONFIG.BASE_SIZE_FACTOR,
                 liquidity * 1500
             );
 
-            // 🔥 increased profit multiplier
-            const profit = size * score * 0.0025;
+            const fillPercent = 0.7 + Math.random() * 0.3;
+            size *= fillPercent;
+
+            // 🔥 EXECUTION FAILURE
+            if (Math.random() < 0.1) {
+                console.log("⚠️ Trade failed (execution)");
+                await sleep(CONFIG.LOOP_DELAY);
+                continue;
+            }
+
+            // 🔥 REALISTIC PROFIT CALC
+            const feeRate = 0.001;     // 0.1% per side
+            const slippage = 0.0008;   // 0.08%
+
+            const grossProfit = size * score * 0.0025;
+
+            const fees = size * feeRate * 2;
+            const slip = size * slippage;
+
+            let profit = grossProfit - fees - slip;
+
+            // 🔥 LOSS SIMULATION
+            if (Math.random() < 0.15) {
+                const loss = Math.abs(profit) * (0.5 + Math.random());
+                state.balance -= loss;
+                state.pnl -= loss;
+                state.lossStreak++;
+
+                console.log(`❌ LOSS TRADE | -$${loss.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`);
+                await sleep(CONFIG.LOOP_DELAY);
+                continue;
+            }
 
             state.balance += profit;
             state.pnl += profit;
