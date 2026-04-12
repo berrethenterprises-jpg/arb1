@@ -1,14 +1,20 @@
-export const isProfitable = ({
+export const calculateProfit = ({
     spread,
-    gasCost,
-    tradeSize
+    tradeSize,
+    gasCost
 }) => {
 
-    const fee = 0.002; // 0.2%
+    const feeRate = 0.002;
 
     const gross = tradeSize * spread;
 
-    const net = gross - (tradeSize * fee) - gasCost;
+    const fees = tradeSize * feeRate;
 
-    return net > 0;
+    const net = gross - fees - gasCost;
+
+    return net;
+};
+
+export const isProfitable = (profit) => {
+    return profit > 0;
 };
