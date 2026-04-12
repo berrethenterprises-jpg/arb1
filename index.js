@@ -1,7 +1,6 @@
 import { CONFIG } from "./config.js";
 import { startFeed, getLivePrice } from "./exchanges/cexFeed.js";
 import { getDEXQuote } from "./exchanges/dex.js";
-import { executeAtomic } from "./utils/execution.js";
 import { getAlpha, updatePrice, recordResult } from "./utils/alphaEngine.js";
 import { shouldTrade } from "./utils/risk.js";
 
@@ -21,7 +20,7 @@ const loop = async () => {
         try {
             const cex = getLivePrice();
 
-            if (!cex || cex.latency > 500) {
+            if (!cex) {
                 await sleep(100);
                 continue;
             }
@@ -41,31 +40,9 @@ const loop = async () => {
                 liquidity +
                 alpha;
 
-            // Latency compensation
-            score *= (1 - cex.latency / 100);
-
-            // REST boost
-            if (cex.latency > 100) {
-                score *= 1.2;
-            }
-
-            const isREST = cex.latency > 100;
-
-            if (isREST) {
-                if (spread < 0.002) {
-                    await sleep(CONFIG.LOOP_DELAY);
-                    continue;
-                }
-            } else {
-                if (!shouldTrade({
-                    spread,
-                    liquidity,
-                    latency: cex.latency,
-                    score
-                })) {
-                    await sleep(CONFIG.LOOP_DELAY);
-                    continue;
-                }
+            if (!shouldTrade({ spread, liquidity, score })) {
+                await sleep(CONFIG.LOOP_DELAY);
+                continue;
             }
 
             const size = Math.min(
@@ -73,24 +50,17 @@ const loop = async () => {
                 liquidity * 1000
             );
 
-            if (CONFIG.PAPER_TRADING) {
-                const profit = size * score * 0.001;
+            const profit = size * score * 0.001;
 
-                state.balance += profit;
-                state.pnl += profit;
-                state.trades++;
+            state.balance += profit;
+            state.pnl += profit;
+            state.trades++;
 
-                recordResult(profit);
+            recordResult(profit);
 
-                console.log(
-                    `📈 TRADE | Profit: $${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
-                );
-            } else {
-                await executeAtomic(
-                    () => Promise.resolve(true),
-                    () => Promise.resolve(true)
-                );
-            }
+            console.log(
+                `📈 TRADE | Profit: $${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
+            );
 
         } catch (e) {
             console.log("Error:", e.message);
