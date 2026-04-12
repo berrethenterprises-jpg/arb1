@@ -7,15 +7,9 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 let flashbots = null;
 
-const CONFIG = {
-    MIN_SPREAD: 0.003,
-    TRADE_SIZE: 0.02,
-    GAS_COST_USD: 15
-};
+console.log("🚀 ARB1 STABLE PRICE ENGINE");
 
-console.log("🚀 ARB1 FINAL ENGINE STARTED");
-
-// 🔥 FLASHBOTS
+// 🔥 FLASHBOTS INIT
 (async () => {
     try {
         flashbots = await FlashbotsBundleProvider.create(provider, wallet);
@@ -23,7 +17,7 @@ console.log("🚀 ARB1 FINAL ENGINE STARTED");
     } catch {
         console.log("⚠️ Flashbots disabled");
     }
-});
+})();
 
 
 // 🔥 SAFE HTTP
@@ -46,42 +40,36 @@ const fetchJSON = (url) => {
 };
 
 
-// 🔥 MULTI-SOURCE PRICE ENGINE (FIXED)
+// 🔥 MULTI-SOURCE (RELIABLE ONLY)
 const getPrices = async () => {
 
-    const [coinbase, binance, coingecko] = await Promise.all([
+    const [coinbase, kraken] = await Promise.all([
         fetchJSON("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
-        fetchJSON("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT"),
-        fetchJSON("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd")
+        fetchJSON("https://api.kraken.com/0/public/Ticker?pair=ETHUSD")
     ]);
 
-    let cb = coinbase?.price;
-    let bn = binance?.price;
-    let cg = coingecko?.ethereum?.usd;
+    const cb = coinbase?.price;
+    const kr = kraken?.result
+        ? Object.values(kraken.result)[0]?.c?.[0]
+        : null;
 
-    // 🔥 FALLBACK LOGIC
-    const coinbasePrice = parseFloat(cb || cg);
-    const binancePrice = parseFloat(bn || cg);
+    console.log("🧪 RAW:", { cb, kr });
 
-    // DEBUG LOG
-    console.log("🧪 RAW:", {
-        cb,
-        bn,
-        cg
-    });
+    const coinbasePrice = parseFloat(cb);
+    const krakenPrice = parseFloat(kr);
 
     if (
         !coinbasePrice ||
-        !binancePrice ||
+        !krakenPrice ||
         isNaN(coinbasePrice) ||
-        isNaN(binancePrice)
+        isNaN(krakenPrice)
     ) {
         return null;
     }
 
     return {
         coinbase: coinbasePrice,
-        binance: binancePrice
+        kraken: krakenPrice
     };
 };
 
@@ -103,10 +91,10 @@ const run = async () => {
             }
 
             const spread =
-                (prices.coinbase - prices.binance) / prices.binance;
+                (prices.coinbase - prices.kraken) / prices.kraken;
 
             console.log(
-                `📊 CB: ${prices.coinbase.toFixed(2)} | BN: ${prices.binance.toFixed(2)} | Spread: ${spread.toFixed(5)}`
+                `📊 CB: ${prices.coinbase.toFixed(2)} | KR: ${prices.kraken.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
         } catch (e) {
