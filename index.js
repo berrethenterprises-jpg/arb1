@@ -14,16 +14,24 @@ let state = {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const loop = async () => {
-    startFeed();
+    console.log("🧠 Bot loop starting...");
+
+    await startFeed(); // IMPORTANT: wait for first price
+
+    console.log("✅ Feed initialized, entering trading loop...");
 
     while (true) {
         try {
             const cex = getLivePrice();
 
+            // 🧠 DEBUG: show if we have data
             if (!cex) {
-                await sleep(100);
+                console.log("⏳ Waiting for price...");
+                await sleep(200);
                 continue;
             }
+
+            console.log(`📊 Price: ${cex.price} | Latency: ${cex.latency}ms`);
 
             const dex = await getDEXQuote();
 
@@ -40,11 +48,18 @@ const loop = async () => {
                 liquidity +
                 alpha;
 
+            console.log(
+                `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
+            );
+
+            // 🛡️ Risk filter
             if (!shouldTrade({ spread, liquidity, score })) {
+                console.log("❌ Skipped trade (filters)");
                 await sleep(CONFIG.LOOP_DELAY);
                 continue;
             }
 
+            // 💰 Position sizing
             const size = Math.min(
                 Math.sqrt(state.balance) * CONFIG.BASE_SIZE_FACTOR,
                 liquidity * 1000
@@ -59,11 +74,11 @@ const loop = async () => {
             recordResult(profit);
 
             console.log(
-                `📈 TRADE | Profit: $${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
+                `📈 TRADE EXECUTED | Profit: $${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)} | Trades: ${state.trades}`
             );
 
         } catch (e) {
-            console.log("Error:", e.message);
+            console.log("❌ Error:", e.message);
         }
 
         await sleep(CONFIG.LOOP_DELAY);
