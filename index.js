@@ -16,7 +16,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const loop = async () => {
     console.log("🧠 Bot loop starting...");
 
-    await startFeed(); // IMPORTANT: wait for first price
+    await startFeed();
 
     console.log("✅ Feed initialized, entering trading loop...");
 
@@ -24,16 +24,16 @@ const loop = async () => {
         try {
             const cex = getLivePrice();
 
-            // 🧠 DEBUG: show if we have data
             if (!cex) {
                 console.log("⏳ Waiting for price...");
                 await sleep(200);
                 continue;
             }
 
-            console.log(`📊 Price: ${cex.price} | Latency: ${cex.latency}ms`);
+            console.log(`📊 Price: ${cex.price.toFixed(2)} | Latency: ${cex.latency}ms`);
 
-            const dex = await getDEXQuote();
+            // ✅ FIXED: pass cex price into DEX
+            const dex = await getDEXQuote(cex.price);
 
             updatePrice(cex.price);
 
@@ -52,14 +52,12 @@ const loop = async () => {
                 `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
             );
 
-            // 🛡️ Risk filter
             if (!shouldTrade({ spread, liquidity, score })) {
                 console.log("❌ Skipped trade (filters)");
                 await sleep(CONFIG.LOOP_DELAY);
                 continue;
             }
 
-            // 💰 Position sizing
             const size = Math.min(
                 Math.sqrt(state.balance) * CONFIG.BASE_SIZE_FACTOR,
                 liquidity * 1000
