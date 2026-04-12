@@ -1,53 +1,72 @@
 import { runMultiPoolEngine } from "./engine/multiPoolEngine.js";
 import { POOLS } from "./config/pools.js";
 import { executeArb } from "./execution/arbExecutor.js";
-import { isProfitable } from "./utils/profitEngine.js";
+import { scoreOpportunity } from "./utils/scoreEngine.js";
+import { calculateProfit, isProfitable } from "./utils/profitEngine.js";
 
 const CONFIG = {
-    MIN_SPREAD: 0.0012,
-    TRADE_SIZE: 1000,
-    GAS_ESTIMATE: 15, // USD estimate
+    MIN_SCORE: 1.5,
+    MAX_TRADE_PCT: 0.3,
+    BASE_GAS: 15,
+    COOLDOWN_MS: 200
 };
 
-console.log("🚀 ARB1 v18 ENGINE STARTED");
+let state = {
+    balance: 1000,
+    lastTrade: 0,
+    trades: 0,
+    pnl: 0
+};
+
+console.log("🚀 ARB1 v19 PROFIT ENGINE STARTED");
 
 runMultiPoolEngine({
     config: POOLS,
 
     onOpportunity: async (opp) => {
         try {
-            const { pair, spread, cex, dex } = opp;
+            const now = Date.now();
 
-            console.log(`🔥 ${pair} Opportunity`);
-            console.log(`CEX: ${cex} | DEX: ${dex}`);
-            console.log(`Spread: ${spread.toFixed(5)}`);
+            // 🔥 TRADE THROTTLING (ROXY FIX)
+            if (now - state.lastTrade < CONFIG.COOLDOWN_MS) return;
 
-            // 🔥 HARD FILTER (ROXY FIX)
-            if (Math.abs(spread) < CONFIG.MIN_SPREAD) {
-                return;
-            }
+            const { spread } = opp;
 
-            const tradeSize = CONFIG.TRADE_SIZE;
+            const volatility = Math.abs(spread);
+            const liquidity = 0.7; // placeholder until live liquidity fetch
 
-            // 🔥 PROFIT CHECK (CRITICAL)
-            const profitable = isProfitable({
+            const score = scoreOpportunity({
                 spread: Math.abs(spread),
-                gasCost: CONFIG.GAS_ESTIMATE,
-                tradeSize
+                volatility,
+                liquidity,
+                gasCost: CONFIG.BASE_GAS
             });
 
-            if (!profitable) {
-                console.log("❌ Not profitable after gas/fees");
+            console.log(`📊 Score: ${score.toFixed(2)} | Spread: ${spread.toFixed(5)}`);
+
+            if (score < CONFIG.MIN_SCORE) {
                 return;
             }
 
-            // 🔥 DIRECTION LOGIC
-            const direction =
-                spread > 0
-                    ? "BUY_DEX_SELL_CEX"
-                    : "BUY_CEX_SELL_DEX";
+            // 🔥 DYNAMIC POSITION SIZING
+            const confidence = Math.min(score / 5, 1);
 
-            console.log(`⚡ Direction: ${direction}`);
+            const tradeSize =
+                state.balance *
+                CONFIG.MAX_TRADE_PCT *
+                confidence;
+
+            // 🔥 PROFIT CALC
+            const profit = calculateProfit({
+                spread: Math.abs(spread),
+                tradeSize,
+                gasCost: CONFIG.BASE_GAS
+            });
+
+            if (!isProfitable(profit)) {
+                console.log("❌ Not profitable after costs");
+                return;
+            }
 
             // 🔥 EXECUTION
             await executeArb({
@@ -58,8 +77,17 @@ runMultiPoolEngine({
                 expectedOut: tradeSize * (1 + Math.abs(spread))
             });
 
+            state.balance += profit;
+            state.pnl += profit;
+            state.trades++;
+            state.lastTrade = now;
+
+            console.log(
+                `📈 TRADE | +$${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
+            );
+
         } catch (e) {
-            console.log("❌ Execution error:", e.message);
+            console.log("❌ Error:", e.message);
         }
     }
 });
