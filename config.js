@@ -1,0 +1,13 @@
+export const CONFIG = {
+    PAPER_TRADING: true,
+
+    START_BALANCE: 10000,
+
+    MIN_SPREAD: 0.003,
+    MIN_LIQUIDITY: 0.5,
+    MAX_LATENCY: 80,
+
+    BASE_SIZE_FACTOR: 10,
+
+    LOOP_DELAY: 50
+};
