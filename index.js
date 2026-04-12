@@ -42,7 +42,7 @@ const loop = async () => {
 
             const alpha = getAlpha(volatility, state.lossStreak);
 
-            // 🔥 BOOSTED scoring
+            // 🔥 improved scoring
             let score =
                 spread * 4 +
                 liquidity * 1.2 +
@@ -52,18 +52,21 @@ const loop = async () => {
                 `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
             );
 
+            // 🔥 strict + smart filtering
             if (!shouldTrade({ spread, liquidity, score })) {
                 console.log("❌ Skipped trade (filters)");
                 await sleep(CONFIG.LOOP_DELAY);
                 continue;
             }
 
+            // 🔥 dynamic sizing (scaled up)
             const size = Math.min(
                 Math.sqrt(state.balance) * CONFIG.BASE_SIZE_FACTOR,
-                liquidity * 1000
+                liquidity * 1500
             );
 
-            const profit = size * score * 0.001;
+            // 🔥 increased profit multiplier
+            const profit = size * score * 0.0025;
 
             state.balance += profit;
             state.pnl += profit;
