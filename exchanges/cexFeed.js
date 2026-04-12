@@ -3,8 +3,9 @@ import https from "https";
 
 let price = null;
 let lastUpdate = 0;
+
 let useWebSocket = true;
-let reconnectDelay = 2000;
+let wsDisabledUntil = 0;
 
 // REST fallback
 const fetchREST = () => {
@@ -28,16 +29,20 @@ const fetchREST = () => {
     });
 };
 
-// WebSocket attempt
+// WebSocket connect (ONE ATTEMPT ONLY)
 const connectWS = () => {
+    if (Date.now() < wsDisabledUntil) return;
+
     const ws = new WebSocket(
         "wss://stream.binance.com:9443/ws/ethusdt@bookTicker"
     );
 
+    let opened = false;
+
     ws.on("open", () => {
         console.log("✅ WebSocket connected");
+        opened = true;
         useWebSocket = true;
-        reconnectDelay = 2000;
     });
 
     ws.on("message", (data) => {
@@ -49,28 +54,25 @@ const connectWS = () => {
     });
 
     ws.on("close", () => {
-        console.log("⚠️ WS closed → switching to REST");
-        useWebSocket = false;
-        reconnectWS();
+        if (!opened) {
+            console.log("❌ WS blocked → disabling for 5 min");
+            useWebSocket = false;
+            wsDisabledUntil = Date.now() + 5 * 60 * 1000; // 5 min cooldown
+        }
     });
 
     ws.on("error", () => {
-        console.log("❌ WS blocked → using REST fallback");
+        console.log("❌ WS error → fallback to REST");
         useWebSocket = false;
+        wsDisabledUntil = Date.now() + 5 * 60 * 1000;
     });
-};
-
-const reconnectWS = () => {
-    setTimeout(() => {
-        reconnectDelay = Math.min(reconnectDelay * 1.5, 15000);
-        connectWS();
-    }, reconnectDelay);
 };
 
 // Start system
 export const startFeed = () => {
     connectWS();
 
+    // REST polling loop
     setInterval(async () => {
         if (!useWebSocket) {
             const p = await fetchREST();
@@ -81,6 +83,14 @@ export const startFeed = () => {
             }
         }
     }, 1000);
+
+    // Try WS again every 5 min
+    setInterval(() => {
+        if (!useWebSocket && Date.now() > wsDisabledUntil) {
+            console.log("🔄 Retrying WebSocket...");
+            connectWS();
+        }
+    }, 30000);
 };
 
 // Unified getter
