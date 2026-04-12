@@ -1,74 +1,95 @@
 import WebSocket from "ws";
+import https from "https";
 
-let orderbook = {
-    bid: 0,
-    ask: 0,
-    lastUpdate: 0
+let price = null;
+let lastUpdate = 0;
+let useWebSocket = true;
+let reconnectDelay = 2000;
+
+// 🔁 REST fallback
+const fetchREST = () => {
+    return new Promise((resolve) => {
+        https.get(
+            "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT",
+            (res) => {
+                let data = "";
+
+                res.on("data", chunk => data += chunk);
+                res.on("end", () => {
+                    try {
+                        const json = JSON.parse(data);
+                        resolve(parseFloat(json.price));
+                    } catch {
+                        resolve(null);
+                    }
+                });
+            }
+        ).on("error", () => resolve(null));
+    });
 };
 
-let ws;
-let reconnectDelay = 2000;
-let heartbeatInterval;
-
-const connect = () => {
-    ws = new WebSocket(
+// 🌐 WebSocket connection
+const connectWS = () => {
+    const ws = new WebSocket(
         "wss://stream.binance.com:9443/ws/ethusdt@bookTicker"
     );
 
     ws.on("open", () => {
         console.log("✅ WebSocket connected");
-
+        useWebSocket = true;
         reconnectDelay = 2000;
-
-        // ❤️ Heartbeat (prevents disconnects)
-        heartbeatInterval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.ping();
-            }
-        }, 15000);
     });
 
     ws.on("message", (data) => {
         try {
             const msg = JSON.parse(data);
-
-            orderbook.bid = parseFloat(msg.b);
-            orderbook.ask = parseFloat(msg.a);
-            orderbook.lastUpdate = Date.now();
-        } catch (e) {}
+            price = (parseFloat(msg.b) + parseFloat(msg.a)) / 2;
+            lastUpdate = Date.now();
+        } catch {}
     });
 
     ws.on("close", () => {
-        console.log("⚠️ WebSocket closed");
-
-        clearInterval(heartbeatInterval);
-
-        reconnect();
+        console.log("⚠️ WS closed → switching to REST");
+        useWebSocket = false;
+        reconnectWS();
     });
 
-    ws.on("error", (err) => {
-        console.log("WebSocket error:", err.message);
+    ws.on("error", () => {
+        console.log("❌ WS blocked → using REST fallback");
+        useWebSocket = false;
     });
 };
 
-const reconnect = () => {
-    console.log(`🔄 Reconnecting in ${reconnectDelay}ms...`);
-
+const reconnectWS = () => {
     setTimeout(() => {
         reconnectDelay = Math.min(reconnectDelay * 1.5, 15000);
-        connect();
+        connectWS();
     }, reconnectDelay);
 };
 
+// 🚀 Start feed
 export const startFeed = () => {
-    connect();
+    connectWS();
+
+    // fallback polling loop
+    setInterval(async () => {
+        if (!useWebSocket) {
+            const p = await fetchREST();
+            if (p) {
+                price = p;
+                lastUpdate = Date.now();
+                console.log("🔁 Using REST fallback price");
+            }
+        }
+    }, 1000);
 };
 
+// 📊 unified getter
 export const getLivePrice = () => {
-    if (!orderbook.lastUpdate) return null;
+    if (!price) return null;
 
     return {
-        price: (orderbook.bid + orderbook.ask) / 2,
-        latency: Date.now() - orderbook.lastUpdate
+        price,
+        latency: Date.now() - lastUpdate
     };
 };
