@@ -2,23 +2,36 @@ import { runMultiPoolEngine } from "./engine/multiPoolEngine.js";
 import { POOLS } from "./config/pools.js";
 import { executeArb } from "./execution/arbExecutor.js";
 import { scoreOpportunity } from "./utils/scoreEngine.js";
-import { calculateProfit, isProfitable } from "./utils/profitEngine.js";
+import { calculateProfit } from "./utils/profitEngine.js";
+
+import { predictMove } from "./utils/predictiveEngine.js";
+import { watchMempool } from "./utils/mempoolMonitor.js";
+import { simulateMultiHop } from "./utils/multiHop.js";
+import { getCrossChainSignal } from "./utils/crossChainSignal.js";
 
 const CONFIG = {
     MIN_SCORE: 1.5,
     MAX_TRADE_PCT: 0.3,
     BASE_GAS: 15,
-    COOLDOWN_MS: 200
+    COOLDOWN_MS: 150
 };
 
 let state = {
     balance: 1000,
-    lastTrade: 0,
+    pnl: 0,
     trades: 0,
-    pnl: 0
+    spreads: [],
+    lastTrade: 0
 };
 
-console.log("🚀 ARB1 v19 PROFIT ENGINE STARTED");
+console.log("🚀 ARB1 v20 (PREDICTIVE + MEV AWARE)");
+
+
+// 🔥 MEMPOOL SIGNAL (BOOST EDGE)
+watchMempool((tx) => {
+    console.log("⚡ Large mempool tx detected:", tx.hash);
+});
+
 
 runMultiPoolEngine({
     config: POOLS,
@@ -27,54 +40,61 @@ runMultiPoolEngine({
         try {
             const now = Date.now();
 
-            // 🔥 TRADE THROTTLING (ROXY FIX)
             if (now - state.lastTrade < CONFIG.COOLDOWN_MS) return;
 
-            const { spread } = opp;
+            const spread = Math.abs(opp.spread);
 
-            const volatility = Math.abs(spread);
-            const liquidity = 0.7; // placeholder until live liquidity fetch
+            // 🔥 STORE HISTORY
+            state.spreads.push(spread);
+            if (state.spreads.length > 20) state.spreads.shift();
+
+            const prediction = predictMove(state.spreads);
+
+            // 🔥 MULTI-HOP TEST
+            const multiHop = simulateMultiHop({
+                amount: 1,
+                path: ["ETH", "USDC", "DAI", "ETH"],
+                prices: {
+                    ETH_USDC: 1800,
+                    USDC_DAI: 1,
+                    DAI_ETH: 1 / 1805
+                }
+            });
+
+            // 🔥 CROSS-CHAIN SIGNAL
+            const cross = getCrossChainSignal({
+                mainnetPrice: opp.cex,
+                altPrice: opp.dex
+            });
 
             const score = scoreOpportunity({
-                spread: Math.abs(spread),
-                volatility,
-                liquidity,
+                spread,
+                volatility: spread + prediction,
+                liquidity: 0.7,
                 gasCost: CONFIG.BASE_GAS
             });
 
-            console.log(`📊 Score: ${score.toFixed(2)} | Spread: ${spread.toFixed(5)}`);
-
-            if (score < CONFIG.MIN_SCORE) {
-                return;
-            }
-
-            // 🔥 DYNAMIC POSITION SIZING
-            const confidence = Math.min(score / 5, 1);
+            if (score < CONFIG.MIN_SCORE) return;
 
             const tradeSize =
                 state.balance *
                 CONFIG.MAX_TRADE_PCT *
-                confidence;
+                Math.min(score / 5, 1);
 
-            // 🔥 PROFIT CALC
             const profit = calculateProfit({
-                spread: Math.abs(spread),
+                spread,
                 tradeSize,
                 gasCost: CONFIG.BASE_GAS
             });
 
-            if (!isProfitable(profit)) {
-                console.log("❌ Not profitable after costs");
-                return;
-            }
+            if (profit <= 0) return;
 
-            // 🔥 EXECUTION
             await executeArb({
                 tokenIn: "WETH",
                 tokenOut: "USDC",
                 fee: 3000,
                 amountIn: tradeSize,
-                expectedOut: tradeSize * (1 + Math.abs(spread))
+                expectedOut: tradeSize * (1 + spread)
             });
 
             state.balance += profit;
