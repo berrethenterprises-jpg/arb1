@@ -8,7 +8,7 @@ let flashbots = null;
 
 const CONFIG = {
     MIN_SPREAD: 0.003,
-    TRADE_SIZE: 0.02, // ETH
+    TRADE_SIZE: 0.02,
     GAS_COST_USD: 15
 };
 
@@ -18,9 +18,9 @@ let state = {
     executing: false
 };
 
-console.log("🚀 ARB1 LIVE ENGINE STARTED");
+console.log("🚀 ARB1 FIXED ENGINE STARTED");
 
-// 🔥 INIT FLASHBOTS
+// ✅ SAFE FLASHBOTS INIT
 (async () => {
     try {
         flashbots = await FlashbotsBundleProvider.create(provider, wallet);
@@ -31,18 +31,26 @@ console.log("🚀 ARB1 LIVE ENGINE STARTED");
 })();
 
 
-// 🔥 REAL PRICE FETCH (COINBASE + BINANCE)
+// 🔥 SAFE PRICE FETCH (FIXED)
 const getPrices = async () => {
     try {
-        const [cb, bn] = await Promise.all([
-            fetch("https://api.exchange.coinbase.com/products/ETH-USD/ticker").then(r => r.json()),
-            fetch("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT").then(r => r.json())
+        const [cbRes, bnRes] = await Promise.all([
+            fetch("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
+            fetch("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT")
         ]);
 
-        return {
-            coinbase: parseFloat(cb.price),
-            binance: parseFloat(bn.price)
-        };
+        const cb = await cbRes.json();
+        const bn = await bnRes.json();
+
+        const coinbase = parseFloat(cb.price);
+        const binance = parseFloat(bn.price);
+
+        // 🔥 HARD VALIDATION (CRITICAL FIX)
+        if (!coinbase || !binance || isNaN(coinbase) || isNaN(binance)) {
+            return null;
+        }
+
+        return { coinbase, binance };
 
     } catch {
         return null;
@@ -50,7 +58,7 @@ const getPrices = async () => {
 };
 
 
-// 🔥 MAIN LOOP
+// 🔥 LOOP
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const run = async () => {
@@ -59,15 +67,15 @@ const run = async () => {
         try {
 
             if (state.executing) {
-                await sleep(50);
+                await sleep(200);
                 continue;
             }
 
             const prices = await getPrices();
 
             if (!prices) {
-                console.log("⏳ Waiting for prices...");
-                await sleep(200);
+                console.log("⏳ Invalid price data, skipping...");
+                await sleep(500);
                 continue;
             }
 
@@ -78,8 +86,9 @@ const run = async () => {
                 `📊 CB: ${prices.coinbase.toFixed(2)} | BN: ${prices.binance.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
-            if (Math.abs(spread) < CONFIG.MIN_SPREAD) {
-                await sleep(50);
+            // 🔥 VALIDATE SPREAD
+            if (isNaN(spread) || Math.abs(spread) < CONFIG.MIN_SPREAD) {
+                await sleep(200);
                 continue;
             }
 
@@ -90,9 +99,10 @@ const run = async () => {
 
             const profit = gross - fees - CONFIG.GAS_COST_USD;
 
-            if (profit <= 0) {
+            // 🔥 VALIDATE PROFIT
+            if (isNaN(profit) || profit <= 0) {
                 console.log("❌ Not profitable");
-                await sleep(50);
+                await sleep(200);
                 continue;
             }
 
@@ -100,10 +110,8 @@ const run = async () => {
 
             console.log(`⚡ TRADE FOUND | Profit: $${profit.toFixed(2)}`);
 
-            // 🔥 FLASHBOTS EXECUTION (SAFE)
             if (flashbots) {
                 try {
-
                     const tx = {
                         to: wallet.address,
                         value: 0,
@@ -111,7 +119,6 @@ const run = async () => {
                     };
 
                     const signed = await wallet.signTransaction(tx);
-
                     const bundle = [{ signedTransaction: signed }];
 
                     const block = await provider.getBlockNumber();
@@ -120,7 +127,7 @@ const run = async () => {
 
                     if (!("error" in sim)) {
                         await flashbots.sendBundle(bundle, block + 1);
-                        console.log("✅ Trade executed (Flashbots)");
+                        console.log("✅ Trade executed");
                     } else {
                         console.log("❌ Simulation failed");
                     }
@@ -144,7 +151,8 @@ const run = async () => {
             state.executing = false;
         }
 
-        await sleep(50);
+        // 🔥 RATE LIMIT FIX
+        await sleep(500);
     }
 };
 
