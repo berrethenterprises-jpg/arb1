@@ -32,7 +32,6 @@ const loop = async () => {
 
             console.log(`📊 Price: ${cex.price.toFixed(2)} | Latency: ${cex.latency}ms`);
 
-            // ✅ FIXED: pass cex price into DEX
             const dex = await getDEXQuote(cex.price);
 
             updatePrice(cex.price);
@@ -43,10 +42,11 @@ const loop = async () => {
 
             const alpha = getAlpha(volatility, state.lossStreak);
 
+            // 🔥 BOOSTED scoring
             let score =
-    spread * 4 +        // stronger weight
-    liquidity * 1.2 +   // boost liquidity impact
-    alpha;
+                spread * 4 +
+                liquidity * 1.2 +
+                alpha;
 
             console.log(
                 `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
