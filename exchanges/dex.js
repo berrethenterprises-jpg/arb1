@@ -5,7 +5,7 @@ export const getDEXQuote = async (cexPrice) => {
         lastPrice = cexPrice;
     }
 
-    const deviation = (Math.random() - 0.5) * 0.01;
+    const deviation = (Math.random() - 0.5) * 0.008;
 
     lastPrice = cexPrice * (1 + deviation);
 
