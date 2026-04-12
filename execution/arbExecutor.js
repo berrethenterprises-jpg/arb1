@@ -1,15 +1,34 @@
 import { ethers } from "ethers";
-import { sendPrivateTx } from "./privateTx.js";
+import { buildSwapTx } from "../dex/uniswapSwap.js";
+import { sendBundle } from "./flashbots.js";
 
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY);
 
-export const executeArb = async (contract, params) => {
+export const executeArb = async ({
+    tokenIn,
+    tokenOut,
+    fee,
+    amountIn,
+    expectedOut
+}) => {
 
-    const tx = await contract.populateTransaction.executeFlashLoan(
-        params.asset,
-        params.amount,
-        params.data
-    );
+    const minOut = expectedOut * 0.995; // 🔥 slippage protection
 
-    return await sendPrivateTx(wallet, tx);
+    const swapTx = await buildSwapTx({
+        tokenIn,
+        tokenOut,
+        fee,
+        recipient: wallet.address,
+        amountIn,
+        minOut
+    });
+
+    const tx = {
+        ...swapTx,
+        gasLimit: 300000,
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+        maxPriorityFeePerGas: ethers.parseUnits("2", "gwei")
+    };
+
+    return await sendBundle(wallet, tx);
 };
