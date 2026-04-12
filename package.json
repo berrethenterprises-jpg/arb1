@@ -6,8 +6,11 @@
   "scripts": {
     "start": "node index.js"
   },
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
-    "ethers": "^6.10.0",
-    "@flashbots/ethers-provider-bundle": "^0.6.2"
+    "ethers": "5.7.2",
+    "@flashbots/ethers-provider-bundle": "0.6.2"
   }
 }
