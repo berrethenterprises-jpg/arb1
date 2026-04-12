@@ -1,33 +1,20 @@
-import crypto from "crypto";
-import https from "https";
+import ccxt from "ccxt";
 
-const API_KEY = process.env.BINANCE_KEY;
-const API_SECRET = process.env.BINANCE_SECRET;
+const exchange = new ccxt.binance({
+    apiKey: process.env.BINANCE_KEY,
+    secret: process.env.BINANCE_SECRET,
+    enableRateLimit: true
+});
 
-const BASE = "https://api.binance.com";
+export const getBinancePrice = async (symbol) => {
+    const ticker = await exchange.fetchTicker(symbol);
+    return ticker.last;
+};
 
-const sign = (query) =>
-    crypto.createHmac("sha256", API_SECRET).update(query).digest("hex");
+export const marketBuy = async (symbol, amount) => {
+    return await exchange.createMarketBuyOrder(symbol, amount);
+};
 
-export const placeOrder = async (symbol, side, quantity) => {
-    const timestamp = Date.now();
-
-    const query = `symbol=${symbol}&side=${side}&type=MARKET&quantity=${quantity}&timestamp=${timestamp}`;
-    const signature = sign(query);
-
-    const url = `${BASE}/api/v3/order?${query}&signature=${signature}`;
-
-    return new Promise((resolve) => {
-        const req = https.request(url, {
-            method: "POST",
-            headers: { "X-MBX-APIKEY": API_KEY }
-        }, (res) => {
-            let data = "";
-            res.on("data", c => data += c);
-            res.on("end", () => resolve(JSON.parse(data)));
-        });
-
-        req.on("error", () => resolve(null));
-        req.end();
-    });
+export const marketSell = async (symbol, amount) => {
+    return await exchange.createMarketSellOrder(symbol, amount);
 };
