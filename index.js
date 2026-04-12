@@ -1,26 +1,13 @@
 import { ethers } from "ethers";
-import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 import https from "https";
+import { getUniswapPrice } from "./dex/uniswap.js";
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-let flashbots = null;
-
-console.log("🚀 ARB1 STABLE PRICE ENGINE");
-
-// 🔥 FLASHBOTS INIT
-(async () => {
-    try {
-        flashbots = await FlashbotsBundleProvider.create(provider, wallet);
-        console.log("✅ Flashbots ready");
-    } catch {
-        console.log("⚠️ Flashbots disabled");
-    }
-})();
+console.log("🚀 ARB1 v22 DEX ENGINE STARTED");
 
 
-// 🔥 SAFE HTTP
+// 🔥 HTTP FETCH
 const fetchJSON = (url) => {
     return new Promise((resolve) => {
         https.get(url, (res) => {
@@ -40,37 +27,13 @@ const fetchJSON = (url) => {
 };
 
 
-// 🔥 MULTI-SOURCE (RELIABLE ONLY)
-const getPrices = async () => {
+// 🔥 CEX PRICE (REFERENCE)
+const getCEXPrice = async () => {
+    const data = await fetchJSON(
+        "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
+    );
 
-    const [coinbase, kraken] = await Promise.all([
-        fetchJSON("https://api.exchange.coinbase.com/products/ETH-USD/ticker"),
-        fetchJSON("https://api.kraken.com/0/public/Ticker?pair=ETHUSD")
-    ]);
-
-    const cb = coinbase?.price;
-    const kr = kraken?.result
-        ? Object.values(kraken.result)[0]?.c?.[0]
-        : null;
-
-    console.log("🧪 RAW:", { cb, kr });
-
-    const coinbasePrice = parseFloat(cb);
-    const krakenPrice = parseFloat(kr);
-
-    if (
-        !coinbasePrice ||
-        !krakenPrice ||
-        isNaN(coinbasePrice) ||
-        isNaN(krakenPrice)
-    ) {
-        return null;
-    }
-
-    return {
-        coinbase: coinbasePrice,
-        kraken: krakenPrice
-    };
+    return data ? parseFloat(data.price) : null;
 };
 
 
@@ -82,20 +45,39 @@ const run = async () => {
     while (true) {
         try {
 
-            const prices = await getPrices();
+            const [dexPrice, cexPrice] = await Promise.all([
+                getUniswapPrice(provider),
+                getCEXPrice()
+            ]);
 
-            if (!prices) {
-                console.log("⏳ Waiting for valid prices...");
+            if (!dexPrice || !cexPrice) {
+                console.log("⏳ Waiting for price data...");
                 await sleep(1000);
                 continue;
             }
 
             const spread =
-                (prices.coinbase - prices.kraken) / prices.kraken;
+                (dexPrice - cexPrice) / cexPrice;
 
             console.log(
-                `📊 CB: ${prices.coinbase.toFixed(2)} | KR: ${prices.kraken.toFixed(2)} | Spread: ${spread.toFixed(5)}`
+                `📊 DEX: ${dexPrice.toFixed(2)} | CEX: ${cexPrice.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
+
+            // 🔥 PROFIT CHECK
+            if (Math.abs(spread) > 0.005) {
+
+                const tradeSize = 1000;
+
+                const gross = tradeSize * Math.abs(spread);
+                const fees = tradeSize * 0.003;
+                const gas = 15;
+
+                const profit = gross - fees - gas;
+
+                if (profit > 0) {
+                    console.log(`🔥 ARB OPPORTUNITY: $${profit.toFixed(2)}`);
+                }
+            }
 
         } catch (e) {
             console.log("❌ ERROR:", e.message);
