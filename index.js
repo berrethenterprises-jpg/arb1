@@ -2,28 +2,31 @@ import { ethers } from "ethers";
 import https from "https";
 import { getUniswapPrice } from "./dex/uniswap.js";
 
-// 🔥 ROBUST PROVIDER (FIXES noNetwork)
-const provider = new ethers.providers.JsonRpcProvider({
-    url: process.env.RPC_URL,
-    timeout: 10000
-});
+// 🔥 PROVIDER (SAFE)
+const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
-// 🔥 VERIFY RPC CONNECTION
-const initProvider = async () => {
-    try {
-        const block = await provider.getBlockNumber();
-        console.log("✅ RPC connected | Block:", block);
-    } catch (e) {
-        console.log("❌ RPC FAILED — CHECK YOUR RPC_URL");
+let rpcReady = false;
+
+// 🔥 RPC INIT WITH RETRY
+const initRPC = async () => {
+    while (!rpcReady) {
+        try {
+            const block = await provider.getBlockNumber();
+            console.log("✅ RPC connected | Block:", block);
+            rpcReady = true;
+        } catch (e) {
+            console.log("❌ RPC FAILED — retrying in 3s...");
+            await new Promise(r => setTimeout(r, 3000));
+        }
     }
 };
 
-await initProvider();
+await initRPC();
 
 console.log("🚀 ARB1 v22 DEX ENGINE STARTED");
 
 
-// 🔥 SAFE HTTP FETCH
+// 🔥 HTTP FETCH
 const fetchJSON = (url) => {
     return new Promise((resolve) => {
         https.get(url, (res) => {
@@ -43,73 +46,64 @@ const fetchJSON = (url) => {
 };
 
 
-// 🔥 CEX PRICE (COINBASE)
+// 🔥 CEX PRICE
 const getCEXPrice = async () => {
-    try {
-        const data = await fetchJSON(
-            "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
-        );
+    const data = await fetchJSON(
+        "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
+    );
 
-        const price = parseFloat(data?.price);
+    const price = parseFloat(data?.price);
 
-        if (!price || isNaN(price)) return null;
-
-        return price;
-
-    } catch {
-        return null;
-    }
+    return (!price || isNaN(price)) ? null : price;
 };
 
 
 // 🔥 CONFIG
 const CONFIG = {
-    MIN_SPREAD: 0.005,   // 0.5%
+    MIN_SPREAD: 0.005,
     TRADE_SIZE: 1000,
     GAS_COST: 15
 };
 
 
-// 🔥 LOOP UTIL
+// 🔥 LOOP
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-
-// 🔥 MAIN ENGINE
 const run = async () => {
 
     while (true) {
         try {
 
-            // 🔥 GET PRICES
+            if (!rpcReady) {
+                console.log("⏳ Waiting for RPC...");
+                await sleep(1000);
+                continue;
+            }
+
             const [dexPrice, cexPrice] = await Promise.all([
                 getUniswapPrice(provider),
                 getCEXPrice()
             ]);
 
-            // 🔥 DEBUG RAW DATA
             console.log("🧪 RAW:", { dexPrice, cexPrice });
 
-            // 🔥 VALIDATION
             if (!dexPrice || !cexPrice) {
                 console.log("⏳ Waiting for price data...");
                 await sleep(1000);
                 continue;
             }
 
-            // 🔥 SPREAD
             const spread = (dexPrice - cexPrice) / cexPrice;
 
             console.log(
                 `📊 DEX: ${dexPrice.toFixed(2)} | CEX: ${cexPrice.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
-            // 🔥 SKIP SMALL OR INVALID
             if (isNaN(spread) || Math.abs(spread) < CONFIG.MIN_SPREAD) {
                 await sleep(1000);
                 continue;
             }
 
-            // 🔥 PROFIT CALC
             const gross = CONFIG.TRADE_SIZE * Math.abs(spread);
             const fees = CONFIG.TRADE_SIZE * 0.003;
             const profit = gross - fees - CONFIG.GAS_COST;
@@ -120,19 +114,15 @@ const run = async () => {
                 continue;
             }
 
-            // 🔥 OPPORTUNITY FOUND
             console.log("🔥 ARB OPPORTUNITY FOUND");
-            console.log(`💰 Estimated Profit: $${profit.toFixed(2)}`);
+            console.log(`💰 Profit: $${profit.toFixed(2)}`);
 
         } catch (e) {
             console.log("❌ LOOP ERROR:", e.message);
         }
 
-        // 🔥 RATE LIMIT PROTECTION
         await sleep(1000);
     }
 };
 
-
-// 🔥 START ENGINE
 run();
