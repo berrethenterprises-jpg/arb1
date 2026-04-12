@@ -7,7 +7,7 @@ const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 console.log("🚀 ARB1 v22 DEX ENGINE STARTED");
 
 
-// 🔥 HTTP FETCH
+// 🔥 SAFE HTTP FETCH
 const fetchJSON = (url) => {
     return new Promise((resolve) => {
         https.get(url, (res) => {
@@ -27,13 +27,30 @@ const fetchJSON = (url) => {
 };
 
 
-// 🔥 CEX PRICE (REFERENCE)
+// 🔥 CEX PRICE (COINBASE)
 const getCEXPrice = async () => {
-    const data = await fetchJSON(
-        "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
-    );
+    try {
+        const data = await fetchJSON(
+            "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
+        );
 
-    return data ? parseFloat(data.price) : null;
+        const price = parseFloat(data?.price);
+
+        if (!price || isNaN(price)) return null;
+
+        return price;
+
+    } catch {
+        return null;
+    }
+};
+
+
+// 🔥 CONFIG
+const CONFIG = {
+    MIN_SPREAD: 0.005, // 0.5% (realistic threshold)
+    TRADE_SIZE: 1000,
+    GAS_COST: 15
 };
 
 
@@ -45,44 +62,55 @@ const run = async () => {
     while (true) {
         try {
 
+            // 🔥 FETCH BOTH PRICES
             const [dexPrice, cexPrice] = await Promise.all([
                 getUniswapPrice(provider),
                 getCEXPrice()
             ]);
 
+            // 🔥 DEBUG RAW OUTPUT
+            console.log("🧪 RAW:", { dexPrice, cexPrice });
+
+            // 🔥 VALIDATION
             if (!dexPrice || !cexPrice) {
                 console.log("⏳ Waiting for price data...");
                 await sleep(1000);
                 continue;
             }
 
-            const spread =
-                (dexPrice - cexPrice) / cexPrice;
+            // 🔥 CALCULATE SPREAD
+            const spread = (dexPrice - cexPrice) / cexPrice;
 
             console.log(
                 `📊 DEX: ${dexPrice.toFixed(2)} | CEX: ${cexPrice.toFixed(2)} | Spread: ${spread.toFixed(5)}`
             );
 
-            // 🔥 PROFIT CHECK
-            if (Math.abs(spread) > 0.005) {
-
-                const tradeSize = 1000;
-
-                const gross = tradeSize * Math.abs(spread);
-                const fees = tradeSize * 0.003;
-                const gas = 15;
-
-                const profit = gross - fees - gas;
-
-                if (profit > 0) {
-                    console.log(`🔥 ARB OPPORTUNITY: $${profit.toFixed(2)}`);
-                }
+            // 🔥 SKIP SMALL OPPORTUNITIES
+            if (isNaN(spread) || Math.abs(spread) < CONFIG.MIN_SPREAD) {
+                await sleep(1000);
+                continue;
             }
 
+            // 🔥 PROFIT CALCULATION
+            const gross = CONFIG.TRADE_SIZE * Math.abs(spread);
+            const fees = CONFIG.TRADE_SIZE * 0.003;
+
+            const profit = gross - fees - CONFIG.GAS_COST;
+
+            if (isNaN(profit) || profit <= 0) {
+                console.log("❌ Not profitable after fees");
+                await sleep(1000);
+                continue;
+            }
+
+            console.log(`🔥 ARB OPPORTUNITY FOUND`);
+            console.log(`💰 Estimated Profit: $${profit.toFixed(2)}`);
+
         } catch (e) {
-            console.log("❌ ERROR:", e.message);
+            console.log("❌ LOOP ERROR:", e.message);
         }
 
+        // 🔥 RATE LIMIT PROTECTION
         await sleep(1000);
     }
 };
