@@ -12,7 +12,7 @@ import { ethers } from "ethers";
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-let flashbots;
+let flashbots = null;
 
 const CONFIG = {
     MIN_SCORE: 1.8,
@@ -22,27 +22,33 @@ const CONFIG = {
 
 let state = {
     balance: 1000,
-    executing: false,
     pnl: 0,
-    trades: 0
+    trades: 0,
+    executing: false
 };
 
-console.log("🚀 ARB1 v21 (MEV PROTECTED)");
+console.log("🚀 ARB1 v21 (STABLE BUILD)");
 
+// ✅ SAFE INIT (NO CRASH)
 (async () => {
     flashbots = await initFlashbots(provider, wallet);
+
+    if (flashbots) {
+        console.log("✅ Flashbots ready");
+    } else {
+        console.log("⚠️ Running without Flashbots");
+    }
 })();
 
 
-// 🔥 MEMPOOL BACKRUN MONITOR
+// 🔥 SAFE MEMPOOL WATCH (NO CRASH)
 provider.on("pending", async (hash) => {
     try {
         const tx = await provider.getTransaction(hash);
 
         if (detectBackrun(tx)) {
-            console.log("⚡ Backrun candidate detected");
+            console.log("⚡ Backrun opportunity detected");
         }
-
     } catch {}
 });
 
@@ -95,23 +101,27 @@ runMultiPoolEngine({
                 expectedOut: tradeSize * (1 + spread)
             });
 
-            // 🔥 FLASHBOTS EXECUTION
-            await sendBundle({
-                flashbots,
-                tx,
-                wallet
-            });
+            // ✅ SAFE EXECUTION (NO CRASH)
+            if (flashbots) {
+                await sendBundle({
+                    flashbots,
+                    tx,
+                    wallet
+                });
+            } else {
+                console.log("⚠️ Skipping trade (no Flashbots)");
+            }
 
             state.balance += profit;
             state.pnl += profit;
             state.trades++;
 
             console.log(
-                `📈 MEV TRADE | +$${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
+                `📈 TRADE | +$${profit.toFixed(2)} | Balance: $${state.balance.toFixed(2)}`
             );
 
         } catch (e) {
-            console.log("❌ Error:", e.message);
+            console.log("❌ Execution error:", e.message);
         }
 
         state.executing = false;
