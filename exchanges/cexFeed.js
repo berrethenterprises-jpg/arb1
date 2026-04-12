@@ -6,28 +6,44 @@ let orderbook = {
     lastUpdate: 0
 };
 
-let connected = false;
+let ws;
+let reconnectDelay = 2000;
+let heartbeatInterval;
 
-export const startFeed = () => {
-    const ws = new WebSocket("wss://stream.binance.com:9443/ws/ethusdt@bookTicker");
+const connect = () => {
+    ws = new WebSocket(
+        "wss://stream.binance.com:9443/ws/ethusdt@bookTicker"
+    );
 
     ws.on("open", () => {
-        console.log("✅ Binance WebSocket connected");
-        connected = true;
+        console.log("✅ WebSocket connected");
+
+        reconnectDelay = 2000;
+
+        // ❤️ Heartbeat (prevents disconnects)
+        heartbeatInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.ping();
+            }
+        }, 15000);
     });
 
     ws.on("message", (data) => {
-        const msg = JSON.parse(data);
+        try {
+            const msg = JSON.parse(data);
 
-        orderbook.bid = parseFloat(msg.b);
-        orderbook.ask = parseFloat(msg.a);
-        orderbook.lastUpdate = Date.now();
+            orderbook.bid = parseFloat(msg.b);
+            orderbook.ask = parseFloat(msg.a);
+            orderbook.lastUpdate = Date.now();
+        } catch (e) {}
     });
 
     ws.on("close", () => {
-        console.log("⚠️ WebSocket closed, reconnecting...");
-        connected = false;
-        setTimeout(startFeed, 2000);
+        console.log("⚠️ WebSocket closed");
+
+        clearInterval(heartbeatInterval);
+
+        reconnect();
     });
 
     ws.on("error", (err) => {
@@ -35,8 +51,21 @@ export const startFeed = () => {
     });
 };
 
+const reconnect = () => {
+    console.log(`🔄 Reconnecting in ${reconnectDelay}ms...`);
+
+    setTimeout(() => {
+        reconnectDelay = Math.min(reconnectDelay * 1.5, 15000);
+        connect();
+    }, reconnectDelay);
+};
+
+export const startFeed = () => {
+    connect();
+};
+
 export const getLivePrice = () => {
-    if (!connected) return null;
+    if (!orderbook.lastUpdate) return null;
 
     return {
         price: (orderbook.bid + orderbook.ask) / 2,
