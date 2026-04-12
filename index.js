@@ -44,9 +44,9 @@ const loop = async () => {
             const alpha = getAlpha(volatility, state.lossStreak);
 
             let score =
-                spread * 2 +
-                liquidity +
-                alpha;
+    spread * 4 +        // stronger weight
+    liquidity * 1.2 +   // boost liquidity impact
+    alpha;
 
             console.log(
                 `🔍 Spread: ${spread.toFixed(4)} | Liquidity: ${liquidity.toFixed(2)} | Score: ${score.toFixed(2)}`
