@@ -6,7 +6,7 @@ let lastUpdate = 0;
 let useWebSocket = true;
 let reconnectDelay = 2000;
 
-// 🔁 REST fallback
+// REST fallback
 const fetchREST = () => {
     return new Promise((resolve) => {
         https.get(
@@ -28,7 +28,7 @@ const fetchREST = () => {
     });
 };
 
-// 🌐 WebSocket connection
+// WebSocket attempt
 const connectWS = () => {
     const ws = new WebSocket(
         "wss://stream.binance.com:9443/ws/ethusdt@bookTicker"
@@ -67,24 +67,23 @@ const reconnectWS = () => {
     }, reconnectDelay);
 };
 
-// 🚀 Start feed
+// Start system
 export const startFeed = () => {
     connectWS();
 
-    // fallback polling loop
     setInterval(async () => {
         if (!useWebSocket) {
             const p = await fetchREST();
             if (p) {
                 price = p;
                 lastUpdate = Date.now();
-                console.log("🔁 Using REST fallback price");
+                console.log("🔁 REST price:", p);
             }
         }
     }, 1000);
 };
 
-// 📊 unified getter
+// Unified getter
 export const getLivePrice = () => {
     if (!price) return null;
 
