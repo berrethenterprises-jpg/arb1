@@ -3,10 +3,8 @@ export const CONFIG = {
 
     START_BALANCE: 10000,
 
-    MIN_SPREAD: 0.002,
+    MIN_SPREAD: 0.001,     // lowered to ensure trades
     MIN_LIQUIDITY: 0.3,
-
-    MAX_LATENCY: 150,
 
     BASE_SIZE_FACTOR: 12,
 
