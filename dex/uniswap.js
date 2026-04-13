@@ -18,4 +18,4 @@ export const getUniswapPrice = async (provider) => {
   } catch {
     return null;
   }
-};
+}; 
