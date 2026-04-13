@@ -3,69 +3,50 @@ import fetch from "node-fetch";
 import { ethers } from "ethers";
 import { getUniswapPrice } from "./dex/uniswap.js";
 import { getSushiPrice } from "./dex/sushiswap.js";
+import { createExecutor, executeTrade } from "./execution/executor.js";
 
 // ================= CONFIG =================
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
-const LOOP_DELAY = 1500;
+const LOOP_DELAY = 2000;
 const MIN_SPREAD = 0.002;
 const GAS_COST = 0.50;
 
 let totalPNL = 0;
 let trades = 0;
 
-// ================= CEX =================
-const getCEXPrices = async () => {
-  try {
-    const [eth, btc] = await Promise.all([
-      fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot").then(r => r.json()),
-      fetch("https://api.coinbase.com/v2/prices/BTC-USD/spot").then(r => r.json())
-    ]);
+const executor = await createExecutor();
 
-    return {
-      ETH: parseFloat(eth?.data?.amount),
-      BTC: parseFloat(btc?.data?.amount)
-    };
+// ================= CEX =================
+const getCEXPrice = async () => {
+  try {
+    const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot");
+    const json = await res.json();
+    const price = parseFloat(json?.data?.amount);
+    return isFinite(price) ? price : null;
   } catch {
     return null;
   }
 };
 
-// ================= TRIANGULAR =================
-const checkTriangular = (prices) => {
-  if (!prices?.ETH || !prices?.BTC) return null;
-
-  // simple triangle sim
-  const ethToBtc = prices.ETH / prices.BTC;
-  const btcToUsd = prices.BTC;
-
-  const loop = ethToBtc * btcToUsd;
-
-  return loop - prices.ETH;
-};
-
-// ================= DYNAMIC SIZE =================
-const getTradeSize = (spread) => {
-  if (spread > 0.01) return 500;
-  if (spread > 0.005) return 250;
-  return 100;
-};
+// ================= VALID =================
+const isValid = (n) => typeof n === "number" && isFinite(n);
 
 // ================= MAIN =================
 const runBot = async () => {
-  console.log("🚀 ARB1 PRO ENGINE STARTED");
+  console.log("🚀 ARB1 EXECUTION ENGINE STARTED");
 
   while (true) {
     try {
       const [uni, sushi, cex] = await Promise.all([
         getUniswapPrice(provider),
         getSushiPrice(provider),
-        getCEXPrices()
+        getCEXPrice()
       ]);
 
       console.log("🧪 RAW:", { uni, sushi, cex });
 
-      if (!cex?.ETH) {
+      if (!isValid(cex)) {
         console.log("⏳ Waiting for CEX...");
         await delay(LOOP_DELAY);
         continue;
@@ -82,43 +63,45 @@ const runBot = async () => {
         continue;
       }
 
-      const best = dexPrices.reduce((a, b) => a.price > b.price ? a : b);
+      const best = dexPrices.reduce((a, b) =>
+        a.price > b.price ? a : b
+      );
 
-      const spread = (best.price - cex.ETH) / cex.ETH;
+      const spread = (best.price - cex) / cex;
 
-      console.log(`📊 ${best.name}: ${best.price} | CEX: ${cex.ETH} | Spread: ${spread}`);
+      console.log(
+        `📊 ${best.name}: ${best.price.toFixed(2)} | CEX: ${cex.toFixed(2)} | Spread: ${spread.toFixed(5)}`
+      );
 
-      // ===== FILTER =====
-      if (Math.abs(spread) > 0.05) continue;
+      if (Math.abs(spread) > 0.05) {
+        console.log("🚫 Bad data");
+        continue;
+      }
 
-      // ===== TRADE =====
+      // ================= TRADE =================
       if (spread > MIN_SPREAD) {
-        const size = getTradeSize(spread);
-        const profit = size * spread - GAS_COST;
+        const tradeSize = 100;
+        const profit = tradeSize * spread - GAS_COST;
 
         if (profit <= 0) {
-          console.log("🚫 No profit after gas");
+          console.log("🚫 Not profitable after gas");
           continue;
         }
+
+        console.log("🔥 EXECUTING TRADE");
+        console.log(`💰 Expected Profit: $${profit.toFixed(2)}`);
+
+        await executeTrade({
+          executor,
+          amountIn: 0.02,
+          expectedProfit: profit
+        });
 
         totalPNL += profit;
         trades++;
 
-        console.log("🔥 ARB TRADE");
-        console.log(`DEX: ${best.name}`);
-        console.log(`💰 Profit: $${profit.toFixed(2)}`);
+        console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
       }
-
-      // ===== TRIANGULAR =====
-      const tri = checkTriangular(cex);
-      if (tri && tri > 1) {
-        console.log("🔺 TRIANGULAR OPPORTUNITY:", tri.toFixed(2));
-      }
-
-      // ===== MEMPOOL (LIGHT) =====
-      provider.getBlockNumber().then(() => {
-        console.log("📡 Mempool heartbeat");
-      });
 
     } catch (err) {
       console.log("❌ ERROR:", err.message);
@@ -128,7 +111,6 @@ const runBot = async () => {
   }
 };
 
-const isValid = (n) => typeof n === "number" && isFinite(n);
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 runBot();
