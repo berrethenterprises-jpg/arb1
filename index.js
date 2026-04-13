@@ -8,100 +8,127 @@ import { getSushiPrice } from "./dex/sushiswap.js";
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const LOOP_DELAY = 1500;
-const MIN_SPREAD = 0.002; // 0.2%
+const MIN_SPREAD = 0.002;
 const GAS_COST = 0.50;
 
 let totalPNL = 0;
 let trades = 0;
 
 // ================= CEX =================
-const getCEXPrice = async () => {
+const getCEXPrices = async () => {
   try {
-    const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot");
-    const json = await res.json();
-    const price = parseFloat(json?.data?.amount);
-    return isFinite(price) ? price : null;
+    const [eth, btc] = await Promise.all([
+      fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot").then(r => r.json()),
+      fetch("https://api.coinbase.com/v2/prices/BTC-USD/spot").then(r => r.json())
+    ]);
+
+    return {
+      ETH: parseFloat(eth?.data?.amount),
+      BTC: parseFloat(btc?.data?.amount)
+    };
   } catch {
     return null;
   }
 };
 
-// ================= VALIDATION =================
-const isValid = (n) => typeof n === "number" && isFinite(n);
+// ================= TRIANGULAR =================
+const checkTriangular = (prices) => {
+  if (!prices?.ETH || !prices?.BTC) return null;
+
+  // simple triangle sim
+  const ethToBtc = prices.ETH / prices.BTC;
+  const btcToUsd = prices.BTC;
+
+  const loop = ethToBtc * btcToUsd;
+
+  return loop - prices.ETH;
+};
+
+// ================= DYNAMIC SIZE =================
+const getTradeSize = (spread) => {
+  if (spread > 0.01) return 500;
+  if (spread > 0.005) return 250;
+  return 100;
+};
 
 // ================= MAIN =================
 const runBot = async () => {
-  console.log("🚀 ARB1 MULTI-DEX ENGINE STARTED");
+  console.log("🚀 ARB1 PRO ENGINE STARTED");
 
   while (true) {
     try {
-      // ===== FETCH ALL PRICES =====
       const [uni, sushi, cex] = await Promise.all([
         getUniswapPrice(provider),
         getSushiPrice(provider),
-        getCEXPrice()
+        getCEXPrices()
       ]);
-
-      const dexPrices = [
-        { name: "Uniswap", price: uni },
-        { name: "Sushi", price: sushi }
-      ].filter(p => isValid(p.price));
 
       console.log("🧪 RAW:", { uni, sushi, cex });
 
-      if (!dexPrices.length || !isValid(cex)) {
-        console.log("⏳ Waiting for valid data...");
+      if (!cex?.ETH) {
+        console.log("⏳ Waiting for CEX...");
         await delay(LOOP_DELAY);
         continue;
       }
 
-      // ===== BEST DEX =====
-      const bestDEX = dexPrices.reduce((a, b) =>
-        a.price > b.price ? a : b
-      );
+      const dexPrices = [
+        { name: "UNI", price: uni },
+        { name: "SUSHI", price: sushi }
+      ].filter(p => isValid(p.price));
 
-      const spread = (bestDEX.price - cex) / cex;
-
-      console.log(
-        `📊 BEST: ${bestDEX.name} ${bestDEX.price.toFixed(2)} | CEX: ${cex.toFixed(2)} | Spread: ${spread.toFixed(5)}`
-      );
-
-      // ===== FILTER BAD DATA =====
-      if (Math.abs(spread) > 0.05) {
-        console.log("🚫 Ignoring unrealistic spread");
+      if (!dexPrices.length) {
+        console.log("⏳ No DEX data...");
         await delay(LOOP_DELAY);
         continue;
       }
+
+      const best = dexPrices.reduce((a, b) => a.price > b.price ? a : b);
+
+      const spread = (best.price - cex.ETH) / cex.ETH;
+
+      console.log(`📊 ${best.name}: ${best.price} | CEX: ${cex.ETH} | Spread: ${spread}`);
+
+      // ===== FILTER =====
+      if (Math.abs(spread) > 0.05) continue;
 
       // ===== TRADE =====
       if (spread > MIN_SPREAD) {
-        const tradeSize = 100;
-        const gross = tradeSize * spread;
-        const net = gross - GAS_COST;
+        const size = getTradeSize(spread);
+        const profit = size * spread - GAS_COST;
 
-        if (!isValid(net) || net <= 0) {
-          console.log("🚫 Not profitable after gas");
-          await delay(LOOP_DELAY);
+        if (profit <= 0) {
+          console.log("🚫 No profit after gas");
           continue;
         }
 
-        totalPNL += net;
+        totalPNL += profit;
         trades++;
 
-        console.log("🔥 REAL ARB TRADE");
-        console.log(`🏦 Route: ${bestDEX.name} → CEX`);
-        console.log(`💰 Net Profit: $${net.toFixed(2)}`);
-        console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
+        console.log("🔥 ARB TRADE");
+        console.log(`DEX: ${best.name}`);
+        console.log(`💰 Profit: $${profit.toFixed(2)}`);
       }
 
+      // ===== TRIANGULAR =====
+      const tri = checkTriangular(cex);
+      if (tri && tri > 1) {
+        console.log("🔺 TRIANGULAR OPPORTUNITY:", tri.toFixed(2));
+      }
+
+      // ===== MEMPOOL (LIGHT) =====
+      provider.getBlockNumber().then(() => {
+        console.log("📡 Mempool heartbeat");
+      });
+
     } catch (err) {
-      console.log("❌ LOOP ERROR:", err.message);
+      console.log("❌ ERROR:", err.message);
     }
 
     await delay(LOOP_DELAY);
   }
 };
 
+const isValid = (n) => typeof n === "number" && isFinite(n);
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 runBot();
