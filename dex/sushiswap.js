@@ -1,7 +1,11 @@
 import { ethers } from "ethers";
 
 const PAIRS = [
-  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0"
+  // ETH/USDC
+  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
+
+  // ETH/DAI
+  "0x06da0fd433C1A5d7a4faa01111c044910A184553"
 ];
 
 const ABI = [
@@ -18,8 +22,9 @@ export const getSushiPools = async (provider) => {
 
       results.push({
         dex: "SUSHI",
-        reserveUSDC: parseFloat(ethers.utils.formatUnits(r0, 6)),
-        reserveETH: parseFloat(ethers.utils.formatUnits(r1, 18))
+        address,
+        reserve0: parseFloat(ethers.utils.formatUnits(r0, 18)),
+        reserve1: parseFloat(ethers.utils.formatUnits(r1, 18))
       });
 
     } catch {}
