@@ -7,42 +7,48 @@ const ABI = [
   "function token1() view returns (address)"
 ];
 
-// Known decimals (fallback to 18)
+// 🔥 FALLBACK POOLS (CRITICAL)
+const FALLBACK = [
+  "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+  "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
+  "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+  "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940"
+];
+
 const DECIMALS = {
-  "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18, // WETH
-  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,  // USDC
-  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,  // USDT
-  "0x6b175474e89094c44da98b954eedeac495271d0f": 18  // DAI
+  "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
+  "0x6b175474e89094c44da98b954eedeac495271d0f": 18
 };
 
-// 🔥 Fetch top pools from The Graph (Uniswap V2)
-const fetchTopPools = async () => {
+// 🔥 Try Graph first
+const fetchGraph = async () => {
   try {
-    const query = {
-      query: `
-      {
-        pairs(first: 50, orderBy: reserveUSD, orderDirection: desc) {
-          id
-        }
-      }
-      `
-    };
-
     const res = await axios.post(
       "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2",
-      query
+      {
+        query: `
+        {
+          pairs(first: 20, orderBy: reserveUSD, orderDirection: desc) {
+            id
+          }
+        }`
+      }
     );
 
     return res.data.data.pairs.map(p => p.id);
 
-  } catch (err) {
-    console.log("❌ Graph fetch failed (UNI)");
-    return [];
+  } catch {
+    console.log("❌ Graph failed → using fallback (UNI)");
+    return null;
   }
 };
 
 export const getUniswapPools = async (provider) => {
-  const addresses = await fetchTopPools();
+  const graph = await fetchGraph();
+  const addresses = graph && graph.length ? graph : FALLBACK;
+
   const results = [];
 
   for (const address of addresses) {
@@ -58,7 +64,6 @@ export const getUniswapPools = async (provider) => {
 
       results.push({
         dex: "UNI",
-        address,
         token0,
         token1,
         reserve0: Number(ethers.utils.formatUnits(r0, d0)),
