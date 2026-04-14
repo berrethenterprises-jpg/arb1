@@ -3,9 +3,9 @@ import { ethers } from "ethers";
 
 import { getUniswapPools } from "./dex/uniswap.js";
 import { getSushiPools } from "./dex/sushiswap.js";
+import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor, executeTrade } from "./execution/executor.js";
 import { startMempool } from "./mempool.js";
-import { findTriangularArb } from "./strategy/triangular.js";
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
@@ -17,7 +17,7 @@ let trades = 0;
 
 const executor = await createExecutor();
 
-console.log("🚀 ARB1 v29 TRIANGULAR ENGINE");
+console.log("🚀 ARB1 v29.1 MULTI-ASSET ENGINE");
 
 const scan = async () => {
   if (isScanning) return;
