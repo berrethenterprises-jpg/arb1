@@ -1,6 +1,9 @@
 import { ethers } from "ethers";
-import FlashbotsBundleProvider from "@flashbots/ethers-provider-bundle";
+import pkg from "@flashbots/ethers-provider-bundle";
 
+const { FlashbotsBundleProvider } = pkg;
+
+// ================= CONSTANTS =================
 const ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const USDC = "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
@@ -9,24 +12,29 @@ const ABI = [
   "function exactInputSingle(tuple(address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns (uint256)"
 ];
 
+// ================= INIT =================
 export const createExecutor = async () => {
   const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
+  // 🔥 FIXED FLASHBOTS INIT
   const flashbots = await FlashbotsBundleProvider.create(
     provider,
     wallet,
-    "https://relay.flashbots.net"
+    "https://relay.flashbots.net",
+    "mainnet"
   );
 
   const router = new ethers.Contract(ROUTER, ABI, wallet);
 
+  console.log("✅ Flashbots initialized");
+
   return { provider, wallet, flashbots, router };
 };
 
+// ================= EXECUTE =================
 export const executeTrade = async ({ executor, amountIn, expectedProfit }) => {
   try {
-    // 🔒 SAFETY FILTERS
     if (expectedProfit < 2) {
       console.log("🚫 Profit too small");
       return;
