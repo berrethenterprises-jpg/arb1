@@ -6,15 +6,20 @@ const ABI = [
   "function getReserves() view returns (uint112,uint112,uint32)"
 ];
 
-export const getSushiPrice = async (provider) => {
+export const getSushiData = async (provider) => {
   try {
     const c = new ethers.Contract(PAIR, ABI, provider);
     const [r0, r1] = await c.getReserves();
 
-    const usdc = parseFloat(ethers.utils.formatUnits(r0, 6));
-    const eth = parseFloat(ethers.utils.formatUnits(r1, 18));
+    const reserveUSDC = parseFloat(ethers.utils.formatUnits(r0, 6));
+    const reserveETH = parseFloat(ethers.utils.formatUnits(r1, 18));
 
-    return eth ? usdc / eth : null;
+    return {
+      price: reserveUSDC / reserveETH,
+      reserveUSDC,
+      reserveETH
+    };
+
   } catch {
     return null;
   }
