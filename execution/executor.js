@@ -10,17 +10,11 @@ export const createExecutor = async () => {
 };
 
 export const executeTrade = async ({ amountIn, expectedProfit }) => {
-  try {
-    if (expectedProfit < 2) return;
+  if (expectedProfit < 2) return;
 
-    // 🔒 SAFE MODE (no real tx yet)
-    console.log("⚡ Simulated FLASH TRADE");
-    console.log({
-      size: amountIn,
-      profit: expectedProfit
-    });
-
-  } catch (err) {
-    console.log("❌ EXECUTION ERROR:", err.message);
-  }
+  console.log("⚡ Simulated FLASH TRADE");
+  console.log({
+    size: amountIn,
+    profit: expectedProfit
+  });
 };
