@@ -14,10 +14,8 @@ export const getUniswapData = async (provider) => {
     const reserveUSDC = parseFloat(ethers.utils.formatUnits(r0, 6));
     const reserveETH = parseFloat(ethers.utils.formatUnits(r1, 18));
 
-    const price = reserveETH ? reserveUSDC / reserveETH : null;
-
     return {
-      price,
+      price: reserveUSDC / reserveETH,
       reserveUSDC,
       reserveETH
     };
