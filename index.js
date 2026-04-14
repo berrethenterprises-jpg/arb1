@@ -9,16 +9,15 @@ import { startMempool } from "./mempool.js";
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
-const TRADE_SIZE = 0.01;
-
 let isScanning = false;
 let totalPNL = 0;
 let trades = 0;
 
 const executor = await createExecutor();
 
-console.log("🚀 ARB1 v29.1 MULTI-ASSET ENGINE");
+console.log("🚀 ARB1 v31 EXECUTION ENGINE");
 
+// ================= SCAN =================
 const scan = async () => {
   if (isScanning) return;
   isScanning = true;
@@ -33,7 +32,7 @@ const scan = async () => {
 
     console.log(`📊 Pools: ${pools.length}`);
 
-    const best = findTriangularArb(pools, TRADE_SIZE);
+    const best = findTriangularArb(pools);
 
     if (!best) {
       console.log("⏳ No triangular arb");
@@ -41,14 +40,13 @@ const scan = async () => {
       return;
     }
 
-    console.log("🔥 TRIANGULAR ARB FOUND");
+    console.log("🔥 REAL TRADE FOUND");
     console.log(best);
 
     await executeTrade({
       executor,
-      amountIn: TRADE_SIZE,
-      expectedProfit: best.profitUSD,
-      minOut: best.finalETH * 0.995
+      tradeSize: best.tradeSize,
+      expectedProfit: best.profitUSD
     });
 
     totalPNL += best.profitUSD;
@@ -63,8 +61,10 @@ const scan = async () => {
   isScanning = false;
 };
 
+// ================= LOOP =================
 setInterval(scan, 2500);
 
+// ================= MEMPOOL =================
 startMempool(provider, async () => {
   console.log("⚡ Mempool trigger");
   await scan();
