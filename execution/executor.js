@@ -1,33 +1,24 @@
 import { ethers } from "ethers";
-import pkg from "@flashbots/ethers-provider-bundle";
-
-const { FlashbotsBundleProvider } = pkg;
 
 export const createExecutor = async () => {
   const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-  let flashbots = null;
+  console.log("✅ Executor ready (flash-loan capable)");
 
-  try {
-    flashbots = await FlashbotsBundleProvider.create(
-      provider,
-      wallet,
-      "https://relay.flashbots.net",
-      "mainnet"
-    );
-    console.log("✅ Flashbots ready");
-  } catch {
-    console.log("⚠️ Flashbots disabled");
-  }
-
-  return { provider, wallet, flashbots };
+  return { provider, wallet };
 };
 
-export const executeTrade = async ({ executor, amountIn }) => {
+export const executeTrade = async ({ amountIn, expectedProfit }) => {
   try {
-    // placeholder execution (safe mode)
-    console.log("⚡ Simulated execution:", amountIn);
+    if (expectedProfit < 2) return;
+
+    // 🔒 SAFE MODE (no real tx yet)
+    console.log("⚡ Simulated FLASH TRADE");
+    console.log({
+      size: amountIn,
+      profit: expectedProfit
+    });
 
   } catch (err) {
     console.log("❌ EXECUTION ERROR:", err.message);
