@@ -1,12 +1,5 @@
 import { ethers } from "ethers";
-
-const PAIRS = [
-  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
-  "0x06da0fd433C1A5d7a4faa01111c044910A184553",
-  "0xC3D03e4f041Fd4cA8F06F5E6F0Bf4C6D1E5C5A0D",
-  "0x055475920a8c93CfFb64d039A8205F7AcC7722d3",
-  "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58"
-];
+import axios from "axios";
 
 const ABI = [
   "function getReserves() view returns (uint112,uint112,uint32)",
@@ -21,10 +14,37 @@ const DECIMALS = {
   "0x6b175474e89094c44da98b954eedeac495271d0f": 18
 };
 
+// 🔥 Fetch top Sushi pools
+const fetchTopPools = async () => {
+  try {
+    const query = {
+      query: `
+      {
+        pairs(first: 50, orderBy: reserveUSD, orderDirection: desc) {
+          id
+        }
+      }
+      `
+    };
+
+    const res = await axios.post(
+      "https://api.thegraph.com/subgraphs/name/sushiswap/exchange",
+      query
+    );
+
+    return res.data.data.pairs.map(p => p.id);
+
+  } catch {
+    console.log("❌ Graph fetch failed (SUSHI)");
+    return [];
+  }
+};
+
 export const getSushiPools = async (provider) => {
+  const addresses = await fetchTopPools();
   const results = [];
 
-  for (const address of PAIRS) {
+  for (const address of addresses) {
     try {
       const c = new ethers.Contract(address, ABI, provider);
 
@@ -44,7 +64,9 @@ export const getSushiPools = async (provider) => {
         reserve1: Number(ethers.utils.formatUnits(r1, d1))
       });
 
-    } catch {}
+    } catch (err) {
+      console.log("❌ SUSHI pool failed:", address);
+    }
   }
 
   return results;
