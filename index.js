@@ -4,10 +4,9 @@ import { ethers } from "ethers";
 
 import { getUniswapData } from "./dex/uniswap.js";
 import { getSushiData } from "./dex/sushiswap.js";
-import { getAmountOut } from "./utils/poolMath.js";
+import { getAmountOut, getAmountOutReverse } from "./utils/poolMath.js";
 import { createExecutor, executeTrade } from "./execution/executor.js";
 
-// ================= CONFIG =================
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const LOOP_DELAY = 2000;
@@ -19,83 +18,91 @@ let trades = 0;
 
 const executor = await createExecutor();
 
-// ================= HELPERS =================
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 const isValid = (n) => typeof n === "number" && isFinite(n);
 
-// ================= CEX =================
-const getCEXPrice = async () => {
-  try {
-    const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot");
-    const json = await res.json();
-    const price = parseFloat(json?.data?.amount);
-    return isValid(price) ? price : null;
-  } catch {
-    return null;
-  }
-};
-
 // ================= MAIN =================
 const runBot = async () => {
-  console.log("🚀 ARB1 v25 FINAL ENGINE");
+  console.log("🚀 ARB1 v26 MULTI-HOP ENGINE");
 
   while (true) {
     try {
-      const [uni, sushi, cex] = await Promise.all([
+      const [uni, sushi] = await Promise.all([
         getUniswapData(provider),
-        getSushiData(provider),
-        getCEXPrice()
+        getSushiData(provider)
       ]);
 
-      console.log("🧪 RAW:", { uni, sushi, cex });
+      console.log("🧪 RAW:", { uni, sushi });
 
-      if (!uni || !sushi || !isValid(cex)) {
-        console.log("⏳ Waiting for valid data...");
+      if (!uni || !sushi) {
+        console.log("⏳ Waiting for data...");
         await delay(LOOP_DELAY);
         continue;
       }
 
-      const pools = [
-        { name: "UNI", ...uni },
-        { name: "SUSHI", ...sushi }
-      ];
+      // ================= PATH 1 =================
+      // UNI → SUSHI
+      const usdcOut1 = getAmountOut(
+        TRADE_SIZE_ETH,
+        uni.reserveETH,
+        uni.reserveUSDC
+      );
 
-      for (const pool of pools) {
-        if (!isValid(pool.reserveETH) || !isValid(pool.reserveUSDC)) continue;
+      const ethBack1 = getAmountOutReverse(
+        usdcOut1,
+        sushi.reserveUSDC,
+        sushi.reserveETH
+      );
 
-        const amountOut = getAmountOut(
-          TRADE_SIZE_ETH,
-          pool.reserveETH,
-          pool.reserveUSDC
-        );
+      const profit1 = ethBack1 - TRADE_SIZE_ETH;
 
-        const expectedUSD = amountOut;
-        const costUSD = TRADE_SIZE_ETH * cex;
-        const profit = expectedUSD - costUSD - GAS_COST;
+      console.log(
+        `🧠 UNI→SUSHI | End ETH: ${ethBack1.toFixed(6)} | Profit: ${profit1.toFixed(6)}`
+      );
 
-        console.log(
-          `🧠 ${pool.name} | Out: $${expectedUSD.toFixed(2)} | Profit: $${profit.toFixed(2)}`
-        );
+      // ================= PATH 2 =================
+      // SUSHI → UNI
+      const usdcOut2 = getAmountOut(
+        TRADE_SIZE_ETH,
+        sushi.reserveETH,
+        sushi.reserveUSDC
+      );
 
-        if (!isValid(profit) || profit < 2 || profit > 1000) continue;
+      const ethBack2 = getAmountOutReverse(
+        usdcOut2,
+        uni.reserveUSDC,
+        uni.reserveETH
+      );
 
-        console.log("🔥 EXECUTING REAL TRADE");
+      const profit2 = ethBack2 - TRADE_SIZE_ETH;
 
-        await executeTrade({
-          executor,
-          amountIn: TRADE_SIZE_ETH,
-          expectedProfit: profit,
-          minOut: expectedUSD * 0.995
-        });
+      console.log(
+        `🧠 SUSHI→UNI | End ETH: ${ethBack2.toFixed(6)} | Profit: ${profit2.toFixed(6)}`
+      );
 
-        totalPNL += profit;
-        trades++;
+      // ================= PICK BEST =================
+      const best = Math.max(profit1, profit2);
 
-        console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
+      if (!isValid(best) || best <= 0.0005) {
+        continue;
       }
 
+      console.log("🔥 MULTI-HOP ARB FOUND");
+
+      await executeTrade({
+        executor,
+        amountIn: TRADE_SIZE_ETH,
+        expectedProfit: best * 2000, // rough USD conversion
+        minOut: TRADE_SIZE_ETH * (1 + best * 0.995)
+      });
+
+      totalPNL += best * 2000;
+      trades++;
+
+      console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
+
     } catch (err) {
-      console.log("❌ ENGINE ERROR:", err.message);
+      console.log("❌ ERROR:", err.message);
     }
 
     await delay(LOOP_DELAY);
