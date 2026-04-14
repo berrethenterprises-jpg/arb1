@@ -10,19 +10,23 @@ import { startMempool } from "./mempool.js";
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const TRADE_SIZE = 0.01;
-const GAS_COST = 0.5;
 
 let totalPNL = 0;
 let trades = 0;
+
+let isScanning = false;
 
 const executor = await createExecutor();
 
 const isValid = (n) => typeof n === "number" && isFinite(n);
 
-console.log("🚀 ARB1 v28 LATENCY ENGINE");
+console.log("🚀 ARB1 v28.3 STABLE ENGINE");
 
-// ================= CORE SCAN =================
+// ================= SCAN ENGINE =================
 const scan = async () => {
+  if (isScanning) return;
+  isScanning = true;
+
   try {
     const [uniPools, sushiPools] = await Promise.all([
       getUniswapPools(provider),
@@ -32,6 +36,8 @@ const scan = async () => {
     const pools = [...uniPools, ...sushiPools].filter(
       p => isValid(p.reserveETH) && isValid(p.reserveUSDC)
     );
+
+    console.log(`📊 Pools: ${pools.length}`);
 
     let bestTrade = null;
 
@@ -64,7 +70,6 @@ const scan = async () => {
         ) {
           bestTrade = {
             path: `${A.dex} → ${B.dex}`,
-            profitETH,
             profitUSD,
             finalETH: ethBack
           };
@@ -72,10 +77,13 @@ const scan = async () => {
       }
     }
 
-    if (!bestTrade) return;
+    if (!bestTrade) {
+      console.log("⏳ No profitable paths");
+      isScanning = false;
+      return;
+    }
 
-    console.log("🔥 TRADE (FAST)");
-    console.log(bestTrade);
+    console.log("🔥 BEST TRADE", bestTrade);
 
     await executeTrade({
       executor,
@@ -92,12 +100,14 @@ const scan = async () => {
   } catch (err) {
     console.log("❌ SCAN ERROR:", err.message);
   }
+
+  isScanning = false;
 };
 
-// ================= FAST LOOP =================
-setInterval(scan, 1200);
+// ================= LOOP =================
+setInterval(scan, 2500);
 
-// ================= MEMPOOL EDGE =================
+// ================= MEMPOOL =================
 startMempool(provider, async () => {
   console.log("⚡ Mempool trigger");
   await scan();
