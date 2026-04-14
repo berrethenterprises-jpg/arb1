@@ -8,36 +8,24 @@ export const findTriangularArb = (pools, tradeSize) => {
       for (let c of pools) {
         if (a === b || b === c || a === c) continue;
 
-        // ETH → USDC
-        const usdc = getAmountOut(
-          tradeSize,
-          a.reserveETH,
-          a.reserveUSDC
-        );
+        // Use reserve0/reserve1 generically
+        const out1 = getAmountOut(tradeSize, a.reserve0, a.reserve1);
+        const out2 = getAmountOut(out1, b.reserve0, b.reserve1);
+        const out3 = getAmountOut(out2, c.reserve0, c.reserve1);
 
-        // USDC → DAI (simulate via USDC/ETH pool again for now)
-        const dai = getAmountOut(
-          usdc,
-          b.reserveUSDC,
-          b.reserveETH
-        );
-
-        // DAI → ETH
-        const ethBack = getAmountOut(
-          dai,
-          c.reserveUSDC,
-          c.reserveETH
-        );
-
-        const profitETH = ethBack - tradeSize;
+        const profitETH = out3 - tradeSize;
         const profitUSD = profitETH * 2000;
 
-        if (profitUSD > 2 && profitUSD < 1000) {
+        if (
+          profitUSD > 2 &&
+          profitUSD < 1000 &&
+          (!best || profitUSD > best.profitUSD)
+        ) {
           best = {
             route: `${a.dex} → ${b.dex} → ${c.dex}`,
             profitETH,
             profitUSD,
-            finalETH: ethBack
+            finalETH: out3
           };
         }
       }
