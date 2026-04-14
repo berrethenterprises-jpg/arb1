@@ -1,25 +1,5 @@
 import { ethers } from "ethers";
-
-const PAIRS = [
-  "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
-  "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
-  "0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11",
-  "0xAE461cA67B15dc8d2dA7c1dD4A90c3c6C5E7eF9A",
-  "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
-
-  "0xBb2b8038a1640196FbE3e38816F3e67Cba72D940",
-  "0x004375Dff511095CC5A197A54140a24eFEF3A416",
-
-  "0x21b8065d10f73ee2e260e5b47d3344d3ced7596e",
-  "0xDcEF968d416a41Cdac0ED8702fAC8128A64241A2",
-  "0x97e7d56A0408570bA1a7852De36350f7713906ec",
-
-  "0xC2aDdA861F89bBB333c90c492cB837741916A225",
-  "0xEd279fDD11cA84bEef15AF5D39BB4d4bEE23F0cA",
-
-  "0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168",
-  "0x55d5c232d921b9eAA6b37b5845E439aCD04b4DBa"
-];
+import axios from "axios";
 
 const ABI = [
   "function getReserves() view returns (uint112,uint112,uint32)",
@@ -27,17 +7,45 @@ const ABI = [
   "function token1() view returns (address)"
 ];
 
+// Known decimals (fallback to 18)
 const DECIMALS = {
-  "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,
-  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
-  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
-  "0x6b175474e89094c44da98b954eedeac495271d0f": 18
+  "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18, // WETH
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,  // USDC
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,  // USDT
+  "0x6b175474e89094c44da98b954eedeac495271d0f": 18  // DAI
+};
+
+// 🔥 Fetch top pools from The Graph (Uniswap V2)
+const fetchTopPools = async () => {
+  try {
+    const query = {
+      query: `
+      {
+        pairs(first: 50, orderBy: reserveUSD, orderDirection: desc) {
+          id
+        }
+      }
+      `
+    };
+
+    const res = await axios.post(
+      "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2",
+      query
+    );
+
+    return res.data.data.pairs.map(p => p.id);
+
+  } catch (err) {
+    console.log("❌ Graph fetch failed (UNI)");
+    return [];
+  }
 };
 
 export const getUniswapPools = async (provider) => {
+  const addresses = await fetchTopPools();
   const results = [];
 
-  for (const address of PAIRS) {
+  for (const address of addresses) {
     try {
       const c = new ethers.Contract(address, ABI, provider);
 
@@ -57,7 +65,9 @@ export const getUniswapPools = async (provider) => {
         reserve1: Number(ethers.utils.formatUnits(r1, d1))
       });
 
-    } catch {}
+    } catch (err) {
+      console.log("❌ UNI pool failed:", address);
+    }
   }
 
   return results;
