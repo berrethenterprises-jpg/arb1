@@ -26,24 +26,31 @@ export const createExecutor = async () => {
 
 export const executeTrade = async ({ executor, amountIn, expectedProfit }) => {
   try {
-    if (expectedProfit < 1) {
+    // 🔒 SAFETY FILTERS
+    if (expectedProfit < 2) {
       console.log("🚫 Profit too small");
       return;
     }
+
+    if (amountIn > 0.05) {
+      console.log("🚫 Trade too large");
+      return;
+    }
+
+    const deadline = Math.floor(Date.now() / 1000) + 60;
 
     const tx = await executor.router.populateTransaction.exactInputSingle({
       tokenIn: WETH,
       tokenOut: USDC,
       fee: 3000,
       recipient: executor.wallet.address,
-      deadline: Math.floor(Date.now() / 1000) + 60,
+      deadline,
       amountIn: ethers.utils.parseEther(amountIn.toString()),
       amountOutMinimum: 0,
       sqrtPriceLimitX96: 0
     });
 
     const signed = await executor.wallet.signTransaction(tx);
-
     const block = await executor.provider.getBlockNumber();
 
     await executor.flashbots.sendBundle(
@@ -51,7 +58,7 @@ export const executeTrade = async ({ executor, amountIn, expectedProfit }) => {
       block + 1
     );
 
-    console.log("📦 Flashbots trade sent");
+    console.log("📦 Flashbots bundle sent");
 
   } catch (err) {
     console.log("❌ EXECUTION ERROR:", err.message);
