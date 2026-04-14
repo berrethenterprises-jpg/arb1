@@ -34,7 +34,7 @@ const isValid = (n) => typeof n === "number" && isFinite(n);
 
 // ================= MAIN =================
 const runBot = async () => {
-  console.log("🚀 ARB1 EXECUTION ENGINE STARTED");
+  console.log("🚀 ARB1 v24 SAFE EXECUTION ENGINE");
 
   while (true) {
     try {
@@ -73,27 +73,28 @@ const runBot = async () => {
         `📊 ${best.name}: ${best.price.toFixed(2)} | CEX: ${cex.toFixed(2)} | Spread: ${spread.toFixed(5)}`
       );
 
+      // 🚫 FILTER BAD DATA
       if (Math.abs(spread) > 0.05) {
-        console.log("🚫 Bad data");
+        console.log("🚫 Ignoring unrealistic spread");
         continue;
       }
 
-      // ================= TRADE =================
+      // ================= SAFE TRADE =================
       if (spread > MIN_SPREAD) {
         const tradeSize = 100;
         const profit = tradeSize * spread - GAS_COST;
 
-        if (profit <= 0) {
-          console.log("🚫 Not profitable after gas");
+        if (profit < 2) {
+          console.log("🚫 Below safe profit threshold");
           continue;
         }
 
-        console.log("🔥 EXECUTING TRADE");
-        console.log(`💰 Expected Profit: $${profit.toFixed(2)}`);
+        console.log("🔥 SAFE TRADE SIGNAL");
+        console.log(`💰 Profit: $${profit.toFixed(2)}`);
 
         await executeTrade({
           executor,
-          amountIn: 0.02,
+          amountIn: 0.01, // small safe size
           expectedProfit: profit
         });
 
