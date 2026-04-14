@@ -1,117 +1,129 @@
 import "dotenv/config";
 import fetch from "node-fetch";
 import { ethers } from "ethers";
-import { getUniswapPrice } from "./dex/uniswap.js";
-import { getSushiPrice } from "./dex/sushiswap.js";
+
+import { getUniswapData } from "./dex/uniswap.js";
+import { getSushiData } from "./dex/sushiswap.js";
+import { getAmountOut } from "./utils/poolMath.js";
 import { createExecutor, executeTrade } from "./execution/executor.js";
 
 // ================= CONFIG =================
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const LOOP_DELAY = 2000;
-const MIN_SPREAD = 0.002;
-const GAS_COST = 0.50;
+const GAS_COST = 0.5;
+const TRADE_SIZE_ETH = 0.01;
 
 let totalPNL = 0;
 let trades = 0;
 
+// ================= INIT =================
 const executor = await createExecutor();
 
-// ================= CEX =================
+// ================= HELPERS =================
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+const isValid = (n) => typeof n === "number" && isFinite(n);
+
+// ================= CEX PRICE =================
 const getCEXPrice = async () => {
   try {
     const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot");
     const json = await res.json();
+
     const price = parseFloat(json?.data?.amount);
-    return isFinite(price) ? price : null;
+    return isValid(price) ? price : null;
+
   } catch {
     return null;
   }
 };
 
-// ================= VALID =================
-const isValid = (n) => typeof n === "number" && isFinite(n);
-
-// ================= MAIN =================
+// ================= MAIN ENGINE =================
 const runBot = async () => {
-  console.log("🚀 ARB1 v24 SAFE EXECUTION ENGINE");
+  console.log("🚀 ARB1 v25 SLIPPAGE ENGINE STARTED");
 
   while (true) {
     try {
       const [uni, sushi, cex] = await Promise.all([
-        getUniswapPrice(provider),
-        getSushiPrice(provider),
+        getUniswapData(provider),
+        getSushiData(provider),
         getCEXPrice()
       ]);
 
       console.log("🧪 RAW:", { uni, sushi, cex });
 
-      if (!isValid(cex)) {
-        console.log("⏳ Waiting for CEX...");
+      // ================= VALIDATION =================
+      if (!uni || !sushi || !isValid(cex)) {
+        console.log("⏳ Waiting for valid data...");
         await delay(LOOP_DELAY);
         continue;
       }
 
-      const dexPrices = [
-        { name: "UNI", price: uni },
-        { name: "SUSHI", price: sushi }
-      ].filter(p => isValid(p.price));
+      const pools = [
+        { name: "UNI", ...uni },
+        { name: "SUSHI", ...sushi }
+      ];
 
-      if (!dexPrices.length) {
-        console.log("⏳ No DEX data...");
-        await delay(LOOP_DELAY);
-        continue;
-      }
+      for (const pool of pools) {
+        if (
+          !isValid(pool.reserveETH) ||
+          !isValid(pool.reserveUSDC)
+        ) continue;
 
-      const best = dexPrices.reduce((a, b) =>
-        a.price > b.price ? a : b
-      );
+        // ================= REAL SWAP SIMULATION =================
+        const amountOut = getAmountOut(
+          TRADE_SIZE_ETH,
+          pool.reserveETH,
+          pool.reserveUSDC
+        );
 
-      const spread = (best.price - cex) / cex;
+        const expectedUSD = amountOut;
+        const costUSD = TRADE_SIZE_ETH * cex;
 
-      console.log(
-        `📊 ${best.name}: ${best.price.toFixed(2)} | CEX: ${cex.toFixed(2)} | Spread: ${spread.toFixed(5)}`
-      );
+        const profit = expectedUSD - costUSD - GAS_COST;
 
-      // 🚫 FILTER BAD DATA
-      if (Math.abs(spread) > 0.05) {
-        console.log("🚫 Ignoring unrealistic spread");
-        continue;
-      }
+        console.log(
+          `🧠 ${pool.name} Sim | Out: $${expectedUSD.toFixed(2)} | Profit: $${profit.toFixed(2)}`
+        );
 
-      // ================= SAFE TRADE =================
-      if (spread > MIN_SPREAD) {
-        const tradeSize = 100;
-        const profit = tradeSize * spread - GAS_COST;
-
-        if (profit < 2) {
-          console.log("🚫 Below safe profit threshold");
+        // ================= FILTER BAD / FAKE =================
+        if (!isValid(profit) || profit < 2) {
           continue;
         }
 
-        console.log("🔥 SAFE TRADE SIGNAL");
+        // 🚫 Catch insane bugs
+        if (profit > 1000) {
+          console.log("🚫 Ignoring unrealistic profit");
+          continue;
+        }
+
+        console.log("🔥 REAL ARB OPPORTUNITY");
         console.log(`💰 Profit: $${profit.toFixed(2)}`);
 
+        // ================= EXECUTE =================
         await executeTrade({
           executor,
-          amountIn: 0.01, // small safe size
-          expectedProfit: profit
+          amountIn: TRADE_SIZE_ETH,
+          expectedProfit: profit,
+          minOut: expectedUSD * 0.995 // 0.5% slippage protection
         });
 
         totalPNL += profit;
         trades++;
 
-        console.log(`📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`);
+        console.log(
+          `📈 TOTAL PNL: $${totalPNL.toFixed(2)} | Trades: ${trades}`
+        );
       }
 
     } catch (err) {
-      console.log("❌ ERROR:", err.message);
+      console.log("❌ ENGINE ERROR:", err.message);
     }
 
     await delay(LOOP_DELAY);
   }
 };
 
-const delay = (ms) => new Promise(res => setTimeout(res, ms));
-
+// ================= START =================
 runBot();
