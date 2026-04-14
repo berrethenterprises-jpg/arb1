@@ -1,18 +1,14 @@
 let lastTrigger = 0;
-const COOLDOWN = 2500; // slightly slower = more stable
+const COOLDOWN = 2500;
 
 export const startMempool = (provider, onTrigger) => {
   try {
-    // 🔥 CRITICAL: remove ALL previous listeners
     provider.removeAllListeners("pending");
 
     provider.on("pending", async (txHash) => {
       const now = Date.now();
 
-      // ⛔ cooldown protection
       if (now - lastTrigger < COOLDOWN) return;
-
-      // ⛔ basic validation
       if (!txHash || txHash.length < 66) return;
 
       lastTrigger = now;
@@ -21,9 +17,7 @@ export const startMempool = (provider, onTrigger) => {
 
       try {
         await onTrigger();
-      } catch (err) {
-        console.log("❌ Trigger error:", err.message);
-      }
+      } catch {}
     });
 
     console.log("✅ Mempool monitoring active (single listener)");
