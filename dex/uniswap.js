@@ -1,26 +1,29 @@
 import { ethers } from "ethers";
 
-const PAIR = "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc";
+const PAIRS = [
+  "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc"
+];
 
 const ABI = [
   "function getReserves() view returns (uint112,uint112,uint32)"
 ];
 
-export const getUniswapData = async (provider) => {
-  try {
-    const c = new ethers.Contract(PAIR, ABI, provider);
-    const [r0, r1] = await c.getReserves();
+export const getUniswapPools = async (provider) => {
+  const results = [];
 
-    const reserveUSDC = parseFloat(ethers.utils.formatUnits(r0, 6));
-    const reserveETH = parseFloat(ethers.utils.formatUnits(r1, 18));
+  for (const address of PAIRS) {
+    try {
+      const c = new ethers.Contract(address, ABI, provider);
+      const [r0, r1] = await c.getReserves();
 
-    return {
-      price: reserveUSDC / reserveETH,
-      reserveUSDC,
-      reserveETH
-    };
+      results.push({
+        dex: "UNI",
+        reserveUSDC: parseFloat(ethers.utils.formatUnits(r0, 6)),
+        reserveETH: parseFloat(ethers.utils.formatUnits(r1, 18))
+      });
 
-  } catch {
-    return null;
+    } catch {}
   }
+
+  return results;
 };
