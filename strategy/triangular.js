@@ -1,5 +1,5 @@
 const FEE = 0.003;
-const GAS = 5;
+const GAS = 3;
 
 const swap = (x, rin, rout) => {
   const xin = x * (1 - FEE);
@@ -15,7 +15,6 @@ export const findTriangularArb = (pools) => {
   for (const p of pools) {
     if (!map[p.token0]) map[p.token0] = [];
     if (!map[p.token1]) map[p.token1] = [];
-
     map[p.token0].push(p);
     map[p.token1].push(p);
   }
@@ -36,7 +35,7 @@ export const findTriangularArb = (pools) => {
 
         const profit = (out3 - start) * 3000 - GAS;
 
-        if (profit > 0.02 && profit < 20) {
+        if (profit > 0.02 && profit < 50) {
           return {
             profitUSD: profit,
             route: `${a.dex} → ${b.dex} → ${c.dex}`
