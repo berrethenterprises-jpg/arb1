@@ -8,22 +8,15 @@ try { await import("dotenv/config"); } catch {}
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
-const wallet = process.env.PRIVATE_KEY
-  ? new ethers.Wallet(process.env.PRIVATE_KEY, provider)
-  : null;
+const executor = await createExecutor(provider);
 
-const executor = await createExecutor(provider, wallet);
-
-// ===== CACHE =====
 let cache = [];
 let lastFetch = 0;
-const CACHE_TTL = 5000;
+const CACHE_TTL = 4000;
 
-// ===== STATS =====
 let pnl = 0;
 let trades = 0;
 
-// ===== FETCH =====
 const fetchPools = async () => {
   if (Date.now() - lastFetch < CACHE_TTL) return cache;
 
@@ -35,11 +28,10 @@ const fetchPools = async () => {
   cache = [...uni, ...sushi];
   lastFetch = Date.now();
 
-  console.log(`📊 Pools (cached): ${cache.length}`);
+  console.log(`📊 Pools: ${cache.length}`);
   return cache;
 };
 
-// ===== ENGINE =====
 const run = async () => {
   try {
     const pools = await fetchPools();
@@ -48,38 +40,21 @@ const run = async () => {
     const opp = findTriangularArb(pools);
     if (!opp) return;
 
-    console.log("🔥 REAL ARB FOUND");
-    console.log(opp);
+    console.log("🔥 REAL ARB", opp);
 
     const res = await executor.execute(opp);
 
     if (res?.success) {
       pnl += res.profit;
       trades++;
-
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
   } catch (e) {
-    console.log("❌ Engine error:", e.message);
+    console.log("❌", e.message);
   }
 };
 
-// ===== MEMPOOL =====
-let attached = false;
+provider.on("pending", run);
 
-const start = () => {
-  if (attached) return;
-
-  try {
-    provider.on("pending", run);
-    console.log("✅ Mempool active (cached)");
-    attached = true;
-  } catch {
-    console.log("⚠️ Fallback loop");
-    setInterval(run, 2000);
-  }
-};
-
-console.log("🚀 ARB1 v32.2 ENGINE");
-start();
+console.log("🚀 ARB1 v32.5 GRAPH ENGINE");
