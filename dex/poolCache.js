@@ -4,15 +4,14 @@ const FILE = "./pools.json";
 
 export const loadCache = () => {
   try {
-    const data = fs.readFileSync(FILE, "utf-8");
-    return JSON.parse(data);
+    return JSON.parse(fs.readFileSync(FILE, "utf-8"));
   } catch {
     return [];
   }
 };
 
-export const saveCache = (pools) => {
+export const saveCache = (data) => {
   try {
-    fs.writeFileSync(FILE, JSON.stringify(pools, null, 2));
+    fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
   } catch {}
 };
