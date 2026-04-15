@@ -3,6 +3,7 @@ import { getUniswapPools } from "./dex/uniswap.js";
 import { getSushiPools } from "./dex/sushiswap.js";
 import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor } from "./execution/executor.js";
+import { loadCache, saveCache } from "./dex/poolCache.js";
 
 try { await import("dotenv/config"); } catch {}
 
@@ -10,28 +11,43 @@ const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const executor = await createExecutor(provider);
 
-let cache = [];
+// ===== CACHE =====
+let cache = loadCache();
 let lastFetch = 0;
-const CACHE_TTL = 4000;
 
+// ===== STATS =====
 let pnl = 0;
 let trades = 0;
 
+// ===== FETCH =====
 const fetchPools = async () => {
-  if (Date.now() - lastFetch < CACHE_TTL) return cache;
+  const now = Date.now();
 
-  const [uni, sushi] = await Promise.all([
-    getUniswapPools(provider),
-    getSushiPools(provider)
-  ]);
+  if (now - lastFetch > 30000) {
+    try {
+      const [uni, sushi] = await Promise.all([
+        getUniswapPools(provider),
+        getSushiPools(provider)
+      ]);
 
-  cache = [...uni, ...sushi];
-  lastFetch = Date.now();
+      cache = [...uni, ...sushi];
 
-  console.log(`📊 Pools: ${cache.length}`);
+      saveCache(cache);
+
+      lastFetch = now;
+
+      console.log(`📊 Pools refreshed: ${cache.length}`);
+    } catch (e) {
+      console.log("⚠️ Using cached pools");
+    }
+  } else {
+    console.log(`📊 Pools (cached): ${cache.length}`);
+  }
+
   return cache;
 };
 
+// ===== ENGINE =====
 const run = async () => {
   try {
     const pools = await fetchPools();
@@ -40,21 +56,23 @@ const run = async () => {
     const opp = findTriangularArb(pools);
     if (!opp) return;
 
-    console.log("🔥 REAL ARB", opp);
+    console.log("🔥 REAL ARB FOUND");
+    console.log(opp);
 
     const res = await executor.execute(opp);
 
     if (res?.success) {
       pnl += res.profit;
       trades++;
+
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
   } catch (e) {
-    console.log("❌", e.message);
+    console.log("❌ Engine error:", e.message);
   }
 };
 
 provider.on("pending", run);
 
-console.log("🚀 ARB1 v32.5 GRAPH ENGINE");
+console.log("🚀 ARB1 v34 HYBRID ENGINE");
