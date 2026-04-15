@@ -4,85 +4,64 @@ import { getSushiPools } from "./dex/sushiswap.js";
 import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor } from "./execution/executor.js";
 
-// ✅ SAFE dotenv load (no crash if missing)
 try {
   await import("dotenv/config");
-} catch {
-  console.log("⚠️ dotenv not found, skipping...");
-}
+} catch {}
 
-// ===== ENV =====
-const RPC_URL = process.env.RPC_URL;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
-// ===== PROVIDER =====
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-
-// ===== WALLET =====
-const wallet = PRIVATE_KEY
-  ? new ethers.Wallet(PRIVATE_KEY, provider)
+const wallet = process.env.PRIVATE_KEY
+  ? new ethers.Wallet(process.env.PRIVATE_KEY, provider)
   : null;
 
-// ===== EXECUTOR =====
 const executor = await createExecutor(provider, wallet);
 
-// ===== STATE =====
-let lastRun = 0;
-const COOLDOWN_MS = 1500;
+// ===== CACHE =====
+let poolCache = [];
+let lastFetch = 0;
+const CACHE_TTL = 5000;
 
-let totalPNL = 0;
-let totalTrades = 0;
+// ===== STATS =====
+let pnl = 0;
+let trades = 0;
 
-// ===== MAIN LOOP =====
-const runEngine = async () => {
-  const now = Date.now();
+// ===== FETCH WITH CACHE =====
+const fetchPools = async () => {
+  if (Date.now() - lastFetch < CACHE_TTL) {
+    return poolCache;
+  }
 
-  // throttle loop
-  if (now - lastRun < COOLDOWN_MS) return;
-  lastRun = now;
+  const [uni, sushi] = await Promise.all([
+    getUniswapPools(provider),
+    getSushiPools(provider)
+  ]);
 
+  poolCache = [...uni, ...sushi];
+  lastFetch = Date.now();
+
+  console.log(`📊 Pools (cached): ${poolCache.length}`);
+  return poolCache;
+};
+
+// ===== ENGINE =====
+const run = async () => {
   try {
-    // ===== FETCH POOLS =====
-    const [uniPools, sushiPools] = await Promise.all([
-      getUniswapPools(provider),
-      getSushiPools(provider)
-    ]);
+    const pools = await fetchPools();
+    if (!pools.length) return;
 
-    const pools = [...uniPools, ...sushiPools];
+    const opp = findTriangularArb(pools);
+    if (!opp) return;
 
-    console.log(`📊 Pools: ${pools.length}`);
+    console.log("🔥 ARB FOUND");
+    console.log(opp);
 
-    if (!pools.length) {
-      console.log("⏳ No pools available");
-      return;
-    }
+    const res = await executor.execute(opp);
 
-    // ===== FIND ARB =====
-    const opportunity = findTriangularArb(pools);
+    if (res?.success) {
+      pnl += res.profit;
+      trades++;
 
-    if (!opportunity) {
-      console.log("⏳ No triangular arb");
-      return;
-    }
-
-    console.log("🔥 TRIANGULAR ARB FOUND");
-    console.log(opportunity);
-
-    // ===== EXECUTE =====
-    const result = await executor.execute(opportunity);
-
-    if (result?.success) {
-      totalPNL += result.profit;
-      totalTrades++;
-
-      console.log("⚡ EXECUTED TRADE");
-      console.log(result);
-
-      console.log(
-        `📈 PNL: $${totalPNL.toFixed(2)} | Trades: ${totalTrades}`
-      );
-    } else {
-      console.log("❌ Execution skipped/failed");
+      console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
   } catch (err) {
@@ -90,30 +69,21 @@ const runEngine = async () => {
   }
 };
 
-// ===== MEMPOOL LISTENER (SINGLE + SAFE) =====
-let mempoolAttached = false;
+// ===== MEMPOOL =====
+let attached = false;
 
-const startMempool = () => {
-  if (mempoolAttached) return;
+const start = () => {
+  if (attached) return;
 
   try {
-    provider.on("pending", async () => {
-      console.log("⚡ Mempool trigger");
-      runEngine();
-    });
-
-    mempoolAttached = true;
-    console.log("✅ Mempool monitoring active (single listener)");
-
-  } catch (err) {
-    console.log("⚠️ Mempool not supported, using interval fallback");
-
-    // fallback loop
-    setInterval(runEngine, 2000);
+    provider.on("pending", run);
+    console.log("✅ Mempool active (cached)");
+    attached = true;
+  } catch {
+    console.log("⚠️ Mempool unsupported → fallback loop");
+    setInterval(run, 2000);
   }
 };
 
-// ===== START =====
-console.log("🚀 ARB1 v31 EXECUTION ENGINE");
-
-startMempool();
+console.log("🚀 ARB1 v31.8 OPTIMIZED");
+start();
