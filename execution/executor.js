@@ -1,5 +1,5 @@
 export const createExecutor = async () => {
-  console.log("✅ Executor ready (safe)");
+  console.log("✅ Executor ready");
 
   return {
     execute: async (opp) => {
@@ -7,7 +7,7 @@ export const createExecutor = async () => {
 
       return {
         success: true,
-        profit: opp.profitUSD || 0
+        profit: opp.profitUSD
       };
     }
   };
