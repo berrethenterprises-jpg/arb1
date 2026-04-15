@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import axios from "axios";
 
 const ABI = [
   "function getReserves() view returns (uint112,uint112,uint32)",
@@ -7,69 +6,47 @@ const ABI = [
   "function token1() view returns (address)"
 ];
 
-const FALLBACK = [
+const PAIRS = [
   "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
-  "0x06da0fd433C1A5d7a4faa01111c044910A184553"
+  "0x06da0fd433C1A5d7a4faa01111c044910A184553",
+  "0xC3D03e4f041Fd4cA8F06F5E6F0Bf4C6D1E5C5A0D",
+  "0x055475920a8c93CfFb64d039A8205F7AcC7722d3",
+  "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58",
+
+  // EXTRA
+  "0x795065dcc9f64b5614c407a6efdc400da6221fb0",
+  "0x9e1b9b5c5f4f4d4c3c3e8a3c3d9d0be4b9f3f4f3"
 ];
 
 const DECIMALS = {
   "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,
-  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
-  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
-  "0x6b175474e89094c44da98b954eedeac495271d0f": 18
-};
-
-const fetchGraph = async () => {
-  try {
-    const res = await axios.post(
-      "https://api.thegraph.com/subgraphs/name/sushiswap/exchange",
-      {
-        query: `
-        {
-          pairs(first: 20, orderBy: reserveUSD, orderDirection: desc) {
-            id
-          }
-        }`
-      }
-    );
-
-    return res.data.data.pairs.map(p => p.id);
-
-  } catch {
-    console.log("❌ Graph failed → using fallback (SUSHI)");
-    return null;
-  }
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6
 };
 
 export const getSushiPools = async (provider) => {
-  const graph = await fetchGraph();
-  const addresses = graph && graph.length ? graph : FALLBACK;
+  const out = [];
 
-  const results = [];
-
-  for (const address of addresses) {
+  for (const addr of PAIRS) {
     try {
-      const c = new ethers.Contract(address, ABI, provider);
+      const c = new ethers.Contract(addr, ABI, provider);
 
       const [r0, r1] = await c.getReserves();
-      const token0 = (await c.token0()).toLowerCase();
-      const token1 = (await c.token1()).toLowerCase();
+      const t0 = (await c.token0()).toLowerCase();
+      const t1 = (await c.token1()).toLowerCase();
 
-      const d0 = DECIMALS[token0] || 18;
-      const d1 = DECIMALS[token1] || 18;
+      const d0 = DECIMALS[t0] || 18;
+      const d1 = DECIMALS[t1] || 18;
 
-      results.push({
+      out.push({
         dex: "SUSHI",
-        token0,
-        token1,
+        token0: t0,
+        token1: t1,
         reserve0: Number(ethers.utils.formatUnits(r0, d0)),
         reserve1: Number(ethers.utils.formatUnits(r1, d1))
       });
 
-    } catch (err) {
-      console.log("❌ SUSHI pool failed:", address);
-    }
+    } catch {}
   }
 
-  return results;
+  return out;
 };
