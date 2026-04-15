@@ -3,7 +3,6 @@ import { ethers } from "ethers";
 const FACTORY = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
 
 const FACTORY_ABI = [
-  "function allPairsLength() view returns (uint)",
   "function allPairs(uint) view returns (address)"
 ];
 
@@ -13,18 +12,16 @@ const PAIR_ABI = [
   "function token1() view returns (address)"
 ];
 
-const MAX_PAIRS = 80; // safe starting size
+// 🔥 PRE-SELECTED HIGH INDEX RANGE (avoids allPairsLength)
+const START_INDEX = 300000; // high activity zone
+const BATCH_SIZE = 40;
 
 export const getUniswapPools = async (provider) => {
   const factory = new ethers.Contract(FACTORY, FACTORY_ABI, provider);
 
-  const total = await factory.allPairsLength();
-
   const out = [];
 
-  const start = Math.max(0, total - MAX_PAIRS);
-
-  for (let i = start; i < total; i++) {
+  for (let i = START_INDEX; i < START_INDEX + BATCH_SIZE; i++) {
     try {
       const addr = await factory.allPairs(i);
 
@@ -32,8 +29,7 @@ export const getUniswapPools = async (provider) => {
 
       const [r0, r1] = await pair.getReserves();
 
-      // ✅ SAFE FILTER (BigNumber check)
-      if (r0.lt(1e6) || r1.lt(1e6)) continue;
+      if (r0.isZero() || r1.isZero()) continue;
 
       const t0 = (await pair.token0()).toLowerCase();
       const t1 = (await pair.token1()).toLowerCase();
@@ -46,10 +42,7 @@ export const getUniswapPools = async (provider) => {
         reserve1: Number(ethers.utils.formatEther(r1))
       });
 
-    } catch (e) {
-      // optional debug
-      // console.log("pair failed", i);
-    }
+    } catch {}
   }
 
   console.log(`🦄 UNI pools loaded: ${out.length}`);
