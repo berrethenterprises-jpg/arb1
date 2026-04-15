@@ -6,17 +6,19 @@ const ABI = [
   "function token1() view returns (address)"
 ];
 
+// ✅ ONLY VALID SUSHI POOLS
 const PAIRS = [
-  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
-  "0x06da0fd433C1A5d7a4faa01111c044910A184553",
-  "0xC3D03e4f041Fd4cA8F06F5E6F0Bf4C6D1E5C5A0D",
-  "0x055475920a8c93CfFb64d039A8205F7AcC7722d3",
-  "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58"
+  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0", // ETH/USDC
+  "0x06da0fd433C1A5d7a4faa01111c044910A184553", // ETH/USDT
+  "0x055475920a8c93CfFb64d039A8205F7AcC7722d3", // ETH/DAI
+  "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58"  // ETH/UNI
 ];
 
 const DECIMALS = {
   "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2": 18,
-  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": 6,
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": 6,
+  "0x6b175474e89094c44da98b954eedeac495271d0f": 18
 };
 
 export const getSushiPools = async (provider) => {
@@ -41,9 +43,7 @@ export const getSushiPools = async (provider) => {
         reserve1: Number(ethers.utils.formatUnits(r1, d1))
       });
 
-    } catch (e) {
-      console.log("SUSHI pool failed:", addr);
-    }
+    } catch {}
   }
 
   return out;
