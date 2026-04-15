@@ -48,7 +48,7 @@ const run = async () => {
     const opp = findTriangularArb(pools);
     if (!opp) return;
 
-    console.log("🔥 ARB FOUND");
+    console.log("🔥 REAL ARB FOUND");
     console.log(opp);
 
     const res = await executor.execute(opp);
@@ -81,5 +81,5 @@ const start = () => {
   }
 };
 
-console.log("🚀 ARB1 v32 ENGINE");
+console.log("🚀 ARB1 v32.2 ENGINE");
 start();
