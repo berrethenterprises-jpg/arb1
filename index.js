@@ -4,9 +4,7 @@ import { getSushiPools } from "./dex/sushiswap.js";
 import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor } from "./execution/executor.js";
 
-try {
-  await import("dotenv/config");
-} catch {}
+try { await import("dotenv/config"); } catch {}
 
 const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
@@ -17,7 +15,7 @@ const wallet = process.env.PRIVATE_KEY
 const executor = await createExecutor(provider, wallet);
 
 // ===== CACHE =====
-let poolCache = [];
+let cache = [];
 let lastFetch = 0;
 const CACHE_TTL = 5000;
 
@@ -25,22 +23,20 @@ const CACHE_TTL = 5000;
 let pnl = 0;
 let trades = 0;
 
-// ===== FETCH WITH CACHE =====
+// ===== FETCH =====
 const fetchPools = async () => {
-  if (Date.now() - lastFetch < CACHE_TTL) {
-    return poolCache;
-  }
+  if (Date.now() - lastFetch < CACHE_TTL) return cache;
 
   const [uni, sushi] = await Promise.all([
     getUniswapPools(provider),
     getSushiPools(provider)
   ]);
 
-  poolCache = [...uni, ...sushi];
+  cache = [...uni, ...sushi];
   lastFetch = Date.now();
 
-  console.log(`📊 Pools (cached): ${poolCache.length}`);
-  return poolCache;
+  console.log(`📊 Pools (cached): ${cache.length}`);
+  return cache;
 };
 
 // ===== ENGINE =====
@@ -64,8 +60,8 @@ const run = async () => {
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
-  } catch (err) {
-    console.log("❌ Engine error:", err.message);
+  } catch (e) {
+    console.log("❌ Engine error:", e.message);
   }
 };
 
@@ -80,10 +76,10 @@ const start = () => {
     console.log("✅ Mempool active (cached)");
     attached = true;
   } catch {
-    console.log("⚠️ Mempool unsupported → fallback loop");
+    console.log("⚠️ Fallback loop");
     setInterval(run, 2000);
   }
 };
 
-console.log("🚀 ARB1 v31.8 OPTIMIZED");
+console.log("🚀 ARB1 v32 ENGINE");
 start();
