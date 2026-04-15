@@ -13,8 +13,7 @@ const PAIR_ABI = [
   "function token1() view returns (address)"
 ];
 
-// 🔥 LIMIT (prevents overload)
-const MAX_PAIRS = 120;
+const MAX_PAIRS = 80; // safe starting size
 
 export const getUniswapPools = async (provider) => {
   const factory = new ethers.Contract(FACTORY, FACTORY_ABI, provider);
@@ -23,8 +22,7 @@ export const getUniswapPools = async (provider) => {
 
   const out = [];
 
-  // 🔥 scan LAST pairs (most active/liquid)
-  const start = total - MAX_PAIRS;
+  const start = Math.max(0, total - MAX_PAIRS);
 
   for (let i = start; i < total; i++) {
     try {
@@ -33,11 +31,12 @@ export const getUniswapPools = async (provider) => {
       const pair = new ethers.Contract(addr, PAIR_ABI, provider);
 
       const [r0, r1] = await pair.getReserves();
+
+      // ✅ SAFE FILTER (BigNumber check)
+      if (r0.lt(1e6) || r1.lt(1e6)) continue;
+
       const t0 = (await pair.token0()).toLowerCase();
       const t1 = (await pair.token1()).toLowerCase();
-
-      // 🔥 filter tiny pools
-      if (Number(r0) < 1e6 || Number(r1) < 1e6) continue;
 
       out.push({
         dex: "UNI",
@@ -47,8 +46,13 @@ export const getUniswapPools = async (provider) => {
         reserve1: Number(ethers.utils.formatEther(r1))
       });
 
-    } catch {}
+    } catch (e) {
+      // optional debug
+      // console.log("pair failed", i);
+    }
   }
+
+  console.log(`🦄 UNI pools loaded: ${out.length}`);
 
   return out;
 };
