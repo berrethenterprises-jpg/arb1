@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { getUniswapPools } from "./dex/uniswap.js";
 import { getSushiPools } from "./dex/sushiswap.js";
+import { simulateMempoolImpact } from "./strategy/mempool.js";
 import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor } from "./execution/executor.js";
 
@@ -10,42 +11,40 @@ const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
 
 const executor = await createExecutor(provider);
 
-// ===== STATS =====
 let pnl = 0;
 let trades = 0;
 
-// ===== FETCH (NO CACHE) =====
+// ===== FETCH POOLS =====
 const fetchPools = async () => {
-  console.log("⚡ Fetching fresh pools...");
+  const [uni, sushi] = await Promise.all([
+    getUniswapPools(provider),
+    getSushiPools(provider)
+  ]);
 
-  try {
-    const [uni, sushi] = await Promise.all([
-      getUniswapPools(provider),
-      getSushiPools(provider)
-    ]);
-
-    const pools = [...uni, ...sushi];
-
-    console.log(`📊 Pools: ${pools.length}`);
-
-    return pools;
-
-  } catch (e) {
-    console.log("❌ Pool fetch failed:", e.message);
-    return [];
-  }
+  return [...uni, ...sushi];
 };
 
-// ===== ENGINE =====
-const run = async () => {
+// ===== MEMPOOL HANDLER =====
+const handleTx = async (txHash) => {
   try {
+    const tx = await provider.getTransaction(txHash);
+    if (!tx || !tx.to) return;
+
+    // 🔥 Filter for swaps (basic heuristic)
+    if (!tx.data || tx.data.length < 10) return;
+
+    console.log("⚡ Mempool tx detected");
+
     const pools = await fetchPools();
     if (!pools.length) return;
 
-    const opp = findTriangularArb(pools);
+    // 🔥 simulate impact
+    const adjustedPools = simulateMempoolImpact(pools, tx);
+
+    const opp = findTriangularArb(adjustedPools);
     if (!opp) return;
 
-    console.log("🔥 REAL ARB FOUND");
+    console.log("🔥 MEMPOOL ARB FOUND");
     console.log(opp);
 
     const res = await executor.execute(opp);
@@ -53,15 +52,12 @@ const run = async () => {
     if (res?.success) {
       pnl += res.profit;
       trades++;
-
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
-  } catch (e) {
-    console.log("❌ Engine error:", e.message);
-  }
+  } catch {}
 };
 
-provider.on("pending", run);
+provider.on("pending", handleTx);
 
-console.log("🚀 ARB1 v34.6 NO-CACHE ENGINE");
+console.log("🚀 ARB1 v35 MEMPOOL ENGINE");
