@@ -3,7 +3,7 @@ export const createExecutor = async () => {
 
   return {
     execute: async (opp) => {
-      console.log("⚡ Simulated trade");
+      console.log("⚡ Simulated MEV trade");
 
       return {
         success: true,
