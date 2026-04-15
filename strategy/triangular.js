@@ -36,7 +36,7 @@ export const findTriangularArb = (pools) => {
 
         const profit = (out3 - start) * 3000 - GAS;
 
-        if (profit > 0.05 && profit < 20) {
+        if (profit > 0.02 && profit < 20) {
           return {
             profitUSD: profit,
             route: `${a.dex} → ${b.dex} → ${c.dex}`
