@@ -4,17 +4,14 @@ import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 export const createExecutor = async (provider) => {
   console.log("⚡ Initializing Flashbots...");
 
-  // 🔐 Flashbots auth signer (does NOT hold funds)
   const authSigner = ethers.Wallet.createRandom();
 
-  // 🔐 Your wallet (used only for signing simulation tx)
   if (!process.env.PRIVATE_KEY) {
-    throw new Error("❌ Missing PRIVATE_KEY in .env");
+    throw new Error("Missing PRIVATE_KEY");
   }
 
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-  // 🔥 Flashbots provider
   const flashbots = await FlashbotsBundleProvider.create(
     provider,
     authSigner
@@ -22,23 +19,15 @@ export const createExecutor = async (provider) => {
 
   console.log("✅ Executor ready (Flashbots simulation)");
 
-  const MIN_PROFIT = 5; // USD threshold
-
   return {
     execute: async (opp) => {
       try {
-        if (!opp || !opp.profitUSD) return;
-
-        if (opp.profitUSD < MIN_PROFIT) {
-          console.log("⏳ Skipping (profit too small)");
-          return;
-        }
+        if (!opp || opp.profitUSD < 5) return;
 
         console.log("⚡ Simulating Flashbots bundle...");
 
-        // ===== BUILD SIMULATED TX =====
         const tx = {
-          to: wallet.address, // placeholder
+          to: wallet.address,
           value: 0,
           gasLimit: 300000,
           maxFeePerGas: ethers.utils.parseUnits("30", "gwei"),
@@ -47,55 +36,33 @@ export const createExecutor = async (provider) => {
           type: 2
         };
 
-        const signedTx = await wallet.signTransaction(tx);
+        const signed = await wallet.signTransaction(tx);
 
-        const bundle = [
-          {
-            signedTransaction: signedTx
-          }
-        ];
+        const bundle = [{ signedTransaction: signed }];
 
-        const blockNumber = await provider.getBlockNumber();
+        const block = await provider.getBlockNumber();
 
-        // ===== FLASHBOTS SIMULATION =====
-        const simulation = await flashbots.simulate(
-          bundle,
-          blockNumber + 1
-        );
+        const sim = await flashbots.simulate(bundle, block + 1);
 
-        if ("error" in simulation) {
-          console.log("❌ Flashbots simulation failed");
+        if ("error" in sim) {
+          console.log("❌ Simulation failed");
           return;
         }
 
-        // ===== GAS CALCULATION =====
-        const gasUsed = simulation.results?.[0]?.gasUsed || 200000;
+        const gasUsed = sim.results?.[0]?.gasUsed || 200000;
+        const gasCost = gasUsed * 30e-9 * 3000;
 
-        const gasPriceGwei = 30;
-        const ethPriceUSD = 3000;
+        const net = opp.profitUSD - gasCost;
+        if (net <= 0) return;
 
-        const gasCostETH = gasUsed * (gasPriceGwei * 1e-9);
-        const gasCostUSD = gasCostETH * ethPriceUSD;
-
-        const netProfit = opp.profitUSD - gasCostUSD;
-
-        if (netProfit <= 0) {
-          console.log("❌ Not profitable after gas");
-          return;
-        }
-
-        // ===== SUCCESS =====
         console.log("🧪 FLASHBOTS SIM SUCCESS");
         console.log({
           gross: opp.profitUSD.toFixed(2),
-          gas: gasCostUSD.toFixed(2),
-          net: netProfit.toFixed(2)
+          gas: gasCost.toFixed(2),
+          net: net.toFixed(2)
         });
 
-        return {
-          success: true,
-          profit: netProfit
-        };
+        return { success: true, profit: net };
 
       } catch (e) {
         console.log("❌ Executor error:", e.message);
