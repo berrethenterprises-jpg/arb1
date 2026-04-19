@@ -24,7 +24,7 @@ const executor = await createExecutor(provider);
 let pnl = 0;
 let trades = 0;
 
-// ===== CACHE =====
+// ===== POOL CACHE =====
 let poolCache = [];
 let lastFetch = 0;
 let fetching = false;
@@ -32,7 +32,8 @@ let fetching = false;
 const fetchPools = async () => {
   const now = Date.now();
 
-  if (now - lastFetch < 10000 && poolCache.length) {
+  // small cooldown
+  if (now - lastFetch < 5000) {
     return poolCache;
   }
 
@@ -41,7 +42,7 @@ const fetchPools = async () => {
   try {
     fetching = true;
 
-    console.log("🔄 Refreshing pools (LOCKED)...");
+    console.log("🔄 Refreshing pools (BATCH MODE)...");
 
     const [uni, sushi] = await Promise.all([
       getUniswapPools(provider),
@@ -50,15 +51,31 @@ const fetchPools = async () => {
 
     const newPools = [...uni, ...sushi];
 
-    // ✅ VALIDATION GUARD
-    if (newPools.length >= 30) {
-      poolCache = newPools;
-      lastFetch = Date.now();
+    // 🔥 ACCUMULATE (NO OVERWRITE)
+    let added = 0;
 
-      console.log(`📊 Pools refreshed: ${poolCache.length}`);
-    } else {
-      console.log(`⚠️ Ignored bad pool fetch: ${newPools.length}`);
+    for (const p of newPools) {
+      const exists = poolCache.find(
+        x =>
+          x.token0 === p.token0 &&
+          x.token1 === p.token1 &&
+          x.dex === p.dex
+      );
+
+      if (!exists) {
+        poolCache.push(p);
+        added++;
+      }
     }
+
+    // 🔥 LIMIT CACHE SIZE
+    if (poolCache.length > 120) {
+      poolCache = poolCache.slice(-120);
+    }
+
+    lastFetch = Date.now();
+
+    console.log(`📊 Pools cached: ${poolCache.length} (+${added})`);
 
     return poolCache;
 
@@ -70,7 +87,7 @@ const fetchPools = async () => {
   }
 };
 
-// ===== MEMPOOL =====
+// ===== MEMPOOL HANDLER =====
 const handleTx = async (txHash) => {
   try {
     const tx = await provider.getTransaction(txHash);
@@ -99,11 +116,12 @@ const handleTx = async (txHash) => {
   } catch {}
 };
 
+// ===== MEMPOOL SUB =====
 if (RPC.startsWith("wss://")) {
   provider.on("pending", handleTx);
 }
 
-// ===== FALLBACK =====
+// ===== FALLBACK LOOP =====
 setInterval(async () => {
   try {
     console.log("🔄 Fallback tick...");
@@ -128,4 +146,4 @@ setInterval(async () => {
   } catch {}
 }, 5000);
 
-console.log("🚀 ARB1 v39.1 VALIDATED ENGINE");
+console.log("🚀 ARB1 v41.6 ACCUMULATING ENGINE");
