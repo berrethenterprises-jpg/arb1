@@ -2,12 +2,17 @@ const FEE = 0.003;
 
 const CAPITAL_USD = 1000;
 const ETH_PRICE = 3000;
-
-// realistic liquidity filter
 const MIN_LIQUIDITY = 50000;
+
+// 🔥 HARD LIMITS
+const MAX_RETURN_RATIO = 1.02; // max 2% gain
+const MAX_RESERVE = 1e12; // sanity cap
 
 const swap = (amountIn, rin, rout) => {
   if (rin <= 0 || rout <= 0) return 0;
+
+  // 🔥 sanity check reserves
+  if (rin > MAX_RESERVE || rout > MAX_RESERVE) return 0;
 
   const ain = amountIn * (1 - FEE);
   return (ain * rout) / (rin + ain);
@@ -43,19 +48,21 @@ export const findTriangularArb = (pools) => {
   const valid = pools.filter(p => liquidityUSD(p) > MIN_LIQUIDITY);
   if (valid.length < 3) return null;
 
-  let best = null;
-
   const startETH = CAPITAL_USD / ETH_PRICE;
+
+  let best = null;
 
   for (let i = 0; i < valid.length; i++) {
     const p1 = valid[i];
 
     for (let j = 0; j < valid.length; j++) {
       if (j === i) continue;
+
       const p2 = valid[j];
 
       for (let k = 0; k < valid.length; k++) {
         if (k === i || k === j) continue;
+
         const p3 = valid[k];
 
         const tokens = [p1.token0, p1.token1];
@@ -81,8 +88,12 @@ export const findTriangularArb = (pools) => {
           const o3 = swap(o2, s3.rin, s3.rout);
           if (o3 <= 0) continue;
 
+          // 🔥 CRITICAL sanity check
+          const ratio = o3 / startETH;
+
+          if (ratio <= 1 || ratio > MAX_RETURN_RATIO) continue;
+
           const profitETH = o3 - startETH;
-          if (profitETH <= 0) continue;
 
           if (!best || profitETH > best.profitETH) {
             best = {
