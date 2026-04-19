@@ -24,21 +24,28 @@ const executor = await createExecutor(provider);
 let pnl = 0;
 let trades = 0;
 
-// ===== POOL CACHE =====
+// ===== POOL CACHE (LOCKED) =====
 let poolCache = [];
 let lastFetch = 0;
+let fetching = false;
 
-// ===== FETCH POOLS (THROTTLED) =====
 const fetchPools = async () => {
   const now = Date.now();
 
-  // 🔥 only refresh every 10 seconds
+  // ✅ return cached pools if fresh
   if (now - lastFetch < 10000 && poolCache.length) {
     return poolCache;
   }
 
+  // 🔥 prevent parallel fetches
+  if (fetching) {
+    return poolCache;
+  }
+
   try {
-    console.log("🔄 Refreshing pools...");
+    fetching = true;
+
+    console.log("🔄 Refreshing pools (LOCKED)...");
 
     const [uni, sushi] = await Promise.all([
       getUniswapPools(provider),
@@ -46,7 +53,7 @@ const fetchPools = async () => {
     ]);
 
     poolCache = [...uni, ...sushi];
-    lastFetch = now;
+    lastFetch = Date.now();
 
     console.log(`📊 Pools refreshed: ${poolCache.length}`);
 
@@ -54,7 +61,9 @@ const fetchPools = async () => {
 
   } catch (e) {
     console.log("❌ Pool fetch error:", e.message);
-    return poolCache; // fallback to old cache
+    return poolCache;
+  } finally {
+    fetching = false;
   }
 };
 
@@ -87,7 +96,7 @@ const handleTx = async (txHash) => {
   } catch {}
 };
 
-// ===== MEMPOOL =====
+// ===== MEMPOOL SUBSCRIPTION =====
 if (RPC.startsWith("wss://")) {
   provider.on("pending", handleTx);
 }
@@ -113,4 +122,4 @@ setInterval(async () => {
   } catch {}
 }, 5000);
 
-console.log("🚀 ARB1 v37.1 STABLE MEMPOOL ENGINE");
+console.log("🚀 ARB1 v37.2 LOCKED ENGINE");
