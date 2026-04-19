@@ -7,39 +7,54 @@ import { createExecutor } from "./execution/executor.js";
 
 try { await import("dotenv/config"); } catch {}
 
-// ===== PROVIDER (AUTO WS OR HTTP FALLBACK) =====
-const RPC = process.env.RPC_URL || "";
+const RPC = process.env.RPC_URL;
 
-let provider;
+const provider = RPC.startsWith("wss://")
+  ? new ethers.providers.WebSocketProvider(RPC)
+  : new ethers.providers.JsonRpcProvider(RPC);
 
-if (RPC.startsWith("wss://")) {
-  provider = new ethers.providers.WebSocketProvider(RPC);
-  console.log("🔌 Using WebSocket provider (mempool enabled)");
-} else {
-  provider = new ethers.providers.JsonRpcProvider(RPC);
-  console.log("⚠️ Using HTTP provider (no real mempool)");
-}
+console.log(
+  RPC.startsWith("wss://")
+    ? "🔌 Using WebSocket provider"
+    : "⚠️ Using HTTP provider"
+);
 
 const executor = await createExecutor(provider);
 
 let pnl = 0;
 let trades = 0;
 
-// ===== FETCH POOLS =====
+// ===== POOL CACHE =====
+let poolCache = [];
+let lastFetch = 0;
+
+// ===== FETCH POOLS (THROTTLED) =====
 const fetchPools = async () => {
+  const now = Date.now();
+
+  // 🔥 only refresh every 10 seconds
+  if (now - lastFetch < 10000 && poolCache.length) {
+    return poolCache;
+  }
+
   try {
+    console.log("🔄 Refreshing pools...");
+
     const [uni, sushi] = await Promise.all([
       getUniswapPools(provider),
       getSushiPools(provider)
     ]);
 
-    const pools = [...uni, ...sushi];
-    console.log(`📊 Pools: ${pools.length}`);
-    return pools;
+    poolCache = [...uni, ...sushi];
+    lastFetch = now;
+
+    console.log(`📊 Pools refreshed: ${poolCache.length}`);
+
+    return poolCache;
 
   } catch (e) {
     console.log("❌ Pool fetch error:", e.message);
-    return [];
+    return poolCache; // fallback to old cache
   }
 };
 
@@ -58,7 +73,7 @@ const handleTx = async (txHash) => {
     const opp = findTriangularArb(adjusted);
     if (!opp) return;
 
-    console.log("🔥 REAL MEMPOOL ARB");
+    console.log("🔥 MEMPOOL ARB");
     console.log(opp);
 
     const res = await executor.execute(opp);
@@ -72,12 +87,12 @@ const handleTx = async (txHash) => {
   } catch {}
 };
 
-// ===== MEMPOOL SUBSCRIPTION (ONLY IF WS) =====
+// ===== MEMPOOL =====
 if (RPC.startsWith("wss://")) {
   provider.on("pending", handleTx);
 }
 
-// ===== FALLBACK LOOP (ALWAYS ACTIVE) =====
+// ===== FALLBACK LOOP =====
 setInterval(async () => {
   try {
     console.log("🔄 Fallback tick...");
@@ -95,17 +110,7 @@ setInterval(async () => {
     console.log("🔥 FALLBACK ARB");
     console.log(opp);
 
-    const res = await executor.execute(opp);
-
-    if (res?.success) {
-      pnl += res.profit;
-      trades++;
-      console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
-    }
-
-  } catch (e) {
-    console.log("❌ Fallback error:", e.message);
-  }
+  } catch {}
 }, 5000);
 
-console.log("🚀 ARB1 v37 HYBRID ENGINE ACTIVE");
+console.log("🚀 ARB1 v37.1 STABLE MEMPOOL ENGINE");
