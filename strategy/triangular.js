@@ -15,6 +15,7 @@ export const findTriangularArb = (pools) => {
   for (const p of pools) {
     if (!map[p.token0]) map[p.token0] = [];
     if (!map[p.token1]) map[p.token1] = [];
+
     map[p.token0].push(p);
     map[p.token1].push(p);
   }
