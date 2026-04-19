@@ -16,34 +16,40 @@ let trades = 0;
 
 // ===== FETCH POOLS =====
 const fetchPools = async () => {
-  const [uni, sushi] = await Promise.all([
-    getUniswapPools(provider),
-    getSushiPools(provider)
-  ]);
+  try {
+    const [uni, sushi] = await Promise.all([
+      getUniswapPools(provider),
+      getSushiPools(provider)
+    ]);
 
-  const pools = [...uni, ...sushi];
-  console.log(`📊 Pools: ${pools.length}`);
-  return pools;
+    const pools = [...uni, ...sushi];
+
+    console.log(`📊 Pools: ${pools.length}`);
+
+    return pools;
+
+  } catch (e) {
+    console.log("❌ Pool fetch error:", e.message);
+    return [];
+  }
 };
 
-// ===== MEMPOOL HANDLER =====
-const handleTx = async (txHash) => {
+// ===== MAIN LOOP (POLLING) =====
+const run = async () => {
   try {
-    const tx = await provider.getTransaction(txHash);
-    if (!tx || !tx.to) return;
-
-    // 🔥 FILTER: ignore tiny noise txs
-    if (tx.value && tx.value.lt(ethers.utils.parseEther("0.1"))) return;
-
-    console.log("⚡ Mempool tx");
+    console.log("🔄 Tick...");
 
     const pools = await fetchPools();
     if (!pools.length) return;
 
+    // simulate mempool-like impact
     const adjusted = simulateMempoolImpact(pools);
 
     const opp = findTriangularArb(adjusted);
-    if (!opp) return;
+    if (!opp) {
+      console.log("⏳ No opportunity");
+      return;
+    }
 
     console.log("🔥 ARB FOUND");
     console.log(opp);
@@ -56,9 +62,12 @@ const handleTx = async (txHash) => {
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
-  } catch {}
+  } catch (e) {
+    console.log("❌ Engine error:", e.message);
+  }
 };
 
-provider.on("pending", handleTx);
+// ===== LOOP EVERY 3 SECONDS =====
+setInterval(run, 3000);
 
-console.log("🚀 ARB1 v36 SAFE EXECUTION ENGINE");
+console.log("🚀 ARB1 v36 POLLING ENGINE ACTIVE");
