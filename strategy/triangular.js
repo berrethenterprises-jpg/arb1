@@ -3,7 +3,8 @@ const FEE = 0.003;
 const CAPITAL_USD = 1000;
 const ETH_PRICE = 3000;
 
-// realistic gas range handled in executor
+// realistic liquidity filter
+const MIN_LIQUIDITY = 50000;
 
 const swap = (amountIn, rin, rout) => {
   if (rin <= 0 || rout <= 0) return 0;
@@ -39,7 +40,7 @@ const getSwap = (pool, fromToken) => {
 export const findTriangularArb = (pools) => {
   if (!pools || pools.length < 3) return null;
 
-  const valid = pools.filter(p => liquidityUSD(p) > 20000);
+  const valid = pools.filter(p => liquidityUSD(p) > MIN_LIQUIDITY);
   if (valid.length < 3) return null;
 
   let best = null;
@@ -51,12 +52,10 @@ export const findTriangularArb = (pools) => {
 
     for (let j = 0; j < valid.length; j++) {
       if (j === i) continue;
-
       const p2 = valid[j];
 
       for (let k = 0; k < valid.length; k++) {
         if (k === i || k === j) continue;
-
         const p3 = valid[k];
 
         const tokens = [p1.token0, p1.token1];
@@ -74,9 +73,12 @@ export const findTriangularArb = (pools) => {
           if (s3.outToken !== startToken) continue;
 
           const o1 = swap(startETH, s1.rin, s1.rout);
-          const o2 = swap(o1, s2.rin, s2.rout);
-          const o3 = swap(o2, s3.rin, s3.rout);
+          if (o1 <= 0) continue;
 
+          const o2 = swap(o1, s2.rin, s2.rout);
+          if (o2 <= 0) continue;
+
+          const o3 = swap(o2, s3.rin, s3.rout);
           if (o3 <= 0) continue;
 
           const profitETH = o3 - startETH;
