@@ -8,13 +8,17 @@ const ABI = [
   "function getReserves() external view returns (uint112,uint112,uint32)"
 ];
 
+let cursor = 0;
+const BATCH_SIZE = 10;
+
 export const getSushiPools = async (provider) => {
   const factory = new ethers.Contract(FACTORY, ABI, provider);
-
   const pools = [];
 
-  for (let i = 0; i < TOKENS.length; i++) {
-    for (let j = i + 1; j < TOKENS.length; j++) {
+  let count = 0;
+
+  for (let i = cursor; i < TOKENS.length && count < BATCH_SIZE; i++) {
+    for (let j = i + 1; j < TOKENS.length && count < BATCH_SIZE; j++) {
       try {
         const t0 = TOKENS[i];
         const t1 = TOKENS[j];
@@ -23,7 +27,6 @@ export const getSushiPools = async (provider) => {
         if (pairAddress === ethers.constants.AddressZero) continue;
 
         const pair = new ethers.Contract(pairAddress, ABI, provider);
-
         const [r0, r1] = await pair.getReserves();
 
         if (!r0 || !r1) continue;
@@ -36,10 +39,13 @@ export const getSushiPools = async (provider) => {
           reserve1: Number(ethers.utils.formatUnits(r1, t1.decimals))
         });
 
+        count++;
       } catch {}
     }
   }
 
-  console.log(`🍣 SUSHI pools: ${pools.length}`);
+  cursor = (cursor + 1) % TOKENS.length;
+
+  console.log(`🍣 SUSHI pools (batched): ${pools.length}`);
   return pools;
 };
