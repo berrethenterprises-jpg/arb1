@@ -1,3 +1,11 @@
+import { ethers } from "ethers";
+
+// Uniswap V2 Router
+const ROUTER = "0x7a250d5630b4cf539739df2c5dacab4c659f2488";
+
+// swapExactETHForTokens
+const SWAP_SIG = "0x7ff36ab5";
+
 const FEE = 0.003;
 
 const simulateSwap = (amountIn, rin, rout) => {
@@ -5,21 +13,46 @@ const simulateSwap = (amountIn, rin, rout) => {
   return (amountInWithFee * rout) / (rin + amountInWithFee);
 };
 
-export const simulateMempoolImpact = (pools) => {
-  const estimatedSize = 5;
+// 🔥 Decode + simulate ONLY real swaps
+export const decodeAndSimulate = (tx, pools) => {
+  try {
+    if (!tx.to) return null;
 
-  return pools.map(p => {
-    const np = { ...p };
+    // 🔥 Only Uniswap router
+    if (tx.to.toLowerCase() !== ROUTER) return null;
 
-    const out = simulateSwap(
-      estimatedSize,
-      np.reserve0,
-      np.reserve1
-    );
+    // 🔥 Only swapExactETHForTokens (simplest)
+    if (!tx.data.startsWith(SWAP_SIG)) return null;
 
-    np.reserve0 += estimatedSize;
-    np.reserve1 -= out;
+    // 🔥 Estimate trade size from value (ETH input)
+    const ethIn = Number(ethers.utils.formatEther(tx.value));
 
-    return np;
-  });
+    if (ethIn < 1) return null; // ignore small trades
+
+    console.log(`⚡ Large swap detected: ${ethIn.toFixed(2)} ETH`);
+
+    // 🔥 Apply directional impact (WETH → token)
+    return pools.map(p => {
+      const np = { ...p };
+
+      // only affect WETH pools
+      if (
+        p.token0 !== "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2" &&
+        p.token1 !== "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2"
+      ) return p;
+
+      const reserveIn = np.reserve0;
+      const reserveOut = np.reserve1;
+
+      const out = simulateSwap(ethIn, reserveIn, reserveOut);
+
+      np.reserve0 += ethIn;
+      np.reserve1 -= out;
+
+      return np;
+    });
+
+  } catch {
+    return null;
+  }
 };
