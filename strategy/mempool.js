@@ -1,31 +1,25 @@
-// 🔥 Simulate price movement BEFORE tx lands
-
 const FEE = 0.003;
 
-// simple swap simulation
 const simulateSwap = (amountIn, rin, rout) => {
   const amountInWithFee = amountIn * (1 - FEE);
   return (amountInWithFee * rout) / (rin + amountInWithFee);
 };
 
-export const simulateMempoolImpact = (pools, tx) => {
-  // 🔥 Fake size estimate (we improve later)
-  const estimatedSize = 10; // small default
+export const simulateMempoolImpact = (pools) => {
+  const estimatedSize = 5;
 
   return pools.map(p => {
-    // clone pool
-    let newPool = { ...p };
+    const np = { ...p };
 
-    // randomly simulate direction (simplified)
     const out = simulateSwap(
       estimatedSize,
-      newPool.reserve0,
-      newPool.reserve1
+      np.reserve0,
+      np.reserve1
     );
 
-    newPool.reserve0 += estimatedSize;
-    newPool.reserve1 -= out;
+    np.reserve0 += estimatedSize;
+    np.reserve1 -= out;
 
-    return newPool;
+    return np;
   });
 };
