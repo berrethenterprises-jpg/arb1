@@ -5,8 +5,6 @@ const TRADE_SIZE_USD = 2000;
 const ETH_PRICE = 3000;
 const GAS_COST = 3;
 
-const WETH = "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2";
-
 const swap = (amountIn, rin, rout) => {
   const ain = amountIn * (1 - FEE);
   return (ain * rout) / (rin + ain);
@@ -14,6 +12,27 @@ const swap = (amountIn, rin, rout) => {
 
 const liquidityUSD = (p) => {
   return (p.reserve0 + p.reserve1) / 2;
+};
+
+// 🔥 normalize direction
+const getSwap = (pool, fromToken) => {
+  if (pool.token0 === fromToken) {
+    return {
+      outToken: pool.token1,
+      rin: pool.reserve0,
+      rout: pool.reserve1
+    };
+  }
+
+  if (pool.token1 === fromToken) {
+    return {
+      outToken: pool.token0,
+      rin: pool.reserve1,
+      rout: pool.reserve0
+    };
+  }
+
+  return null;
 };
 
 export const findTriangularArb = (pools) => {
@@ -24,41 +43,40 @@ export const findTriangularArb = (pools) => {
 
   let best = null;
 
-  for (let i = 0; i < valid.length; i++) {
-    const a = valid[i];
+  // 🔥 start token (bias toward WETH)
+  const startToken = valid[0].token0;
 
-    // 🔥 still bias WETH start
-    if (a.token0 !== WETH && a.token1 !== WETH) continue;
+  for (let i = 0; i < valid.length; i++) {
+    const p1 = valid[i];
+
+    const s1 = getSwap(p1, startToken);
+    if (!s1) continue;
 
     for (let j = 0; j < valid.length; j++) {
-      const b = valid[j];
-      if (i === j) continue;
+      if (j === i) continue;
 
-      // flexible linking
-      if (a.token1 !== b.token0 && a.token0 !== b.token1) continue;
+      const p2 = valid[j];
+      const s2 = getSwap(p2, s1.outToken);
+      if (!s2) continue;
 
       for (let k = 0; k < valid.length; k++) {
-        const c = valid[k];
         if (k === i || k === j) continue;
 
-        // allow flexible triangle closure
-        if (
-          !(b.token1 === c.token0 || b.token0 === c.token1)
-        ) continue;
+        const p3 = valid[k];
+        const s3 = getSwap(p3, s2.outToken);
+        if (!s3) continue;
 
-        if (
-          !(c.token1 === a.token0 || c.token0 === a.token1)
-        ) continue;
+        if (s3.outToken !== startToken) continue;
 
         const startETH = TRADE_SIZE_USD / ETH_PRICE;
 
-        const o1 = swap(startETH, a.reserve0, a.reserve1);
+        const o1 = swap(startETH, s1.rin, s1.rout);
         if (o1 <= 0) continue;
 
-        const o2 = swap(o1, b.reserve0, b.reserve1);
+        const o2 = swap(o1, s2.rin, s2.rout);
         if (o2 <= 0) continue;
 
-        const o3 = swap(o2, c.reserve0, c.reserve1);
+        const o3 = swap(o2, s3.rin, s3.rout);
         if (o3 <= 0) continue;
 
         const profitETH = o3 - startETH;
@@ -69,7 +87,7 @@ export const findTriangularArb = (pools) => {
 
         if (!best || net > best.profitUSD) {
           best = {
-            route: `${a.dex} → ${b.dex} → ${c.dex}`,
+            route: `${p1.dex} → ${p2.dex} → ${p3.dex}`,
             profitETH,
             profitUSD: net,
             sizeETH: startETH
