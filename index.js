@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { getUniswapPools } from "./dex/uniswap.js";
 import { getSushiPools } from "./dex/sushiswap.js";
-import { simulateMempoolImpact } from "./strategy/mempool.js";
+import { decodeAndSimulate } from "./strategy/mempool.js";
 import { findTriangularArb } from "./strategy/triangular.js";
 import { createExecutor } from "./execution/executor.js";
 
@@ -14,44 +14,32 @@ const executor = await createExecutor(provider);
 let pnl = 0;
 let trades = 0;
 
-// ===== FETCH POOLS =====
+// ===== FETCH =====
 const fetchPools = async () => {
-  try {
-    const [uni, sushi] = await Promise.all([
-      getUniswapPools(provider),
-      getSushiPools(provider)
-    ]);
+  const [uni, sushi] = await Promise.all([
+    getUniswapPools(provider),
+    getSushiPools(provider)
+  ]);
 
-    const pools = [...uni, ...sushi];
-
-    console.log(`📊 Pools: ${pools.length}`);
-
-    return pools;
-
-  } catch (e) {
-    console.log("❌ Pool fetch error:", e.message);
-    return [];
-  }
+  return [...uni, ...sushi];
 };
 
-// ===== MAIN LOOP (POLLING) =====
-const run = async () => {
+// ===== MEMPOOL HANDLER =====
+const handleTx = async (txHash) => {
   try {
-    console.log("🔄 Tick...");
+    const tx = await provider.getTransaction(txHash);
+    if (!tx) return;
 
     const pools = await fetchPools();
     if (!pools.length) return;
 
-    // simulate mempool-like impact
-    const adjusted = simulateMempoolImpact(pools);
+    const adjusted = decodeAndSimulate(tx, pools);
+    if (!adjusted) return;
 
     const opp = findTriangularArb(adjusted);
-    if (!opp) {
-      console.log("⏳ No opportunity");
-      return;
-    }
+    if (!opp) return;
 
-    console.log("🔥 ARB FOUND");
+    console.log("🔥 REAL MEMPOOL ARB");
     console.log(opp);
 
     const res = await executor.execute(opp);
@@ -62,12 +50,9 @@ const run = async () => {
       console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
     }
 
-  } catch (e) {
-    console.log("❌ Engine error:", e.message);
-  }
+  } catch {}
 };
 
-// ===== LOOP EVERY 3 SECONDS =====
-setInterval(run, 3000);
+provider.on("pending", handleTx);
 
-console.log("🚀 ARB1 v36 POLLING ENGINE ACTIVE");
+console.log("🚀 ARB1 v37 MEMPOOL DECODER");
