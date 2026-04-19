@@ -7,7 +7,7 @@ export const createExecutor = async (provider) => {
   const authSigner = ethers.Wallet.createRandom();
 
   if (!process.env.PRIVATE_KEY) {
-    throw new Error("Missing PRIVATE_KEY");
+    throw new Error("❌ Missing PRIVATE_KEY");
   }
 
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
