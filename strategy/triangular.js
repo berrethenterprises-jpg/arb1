@@ -1,50 +1,82 @@
 const FEE = 0.003;
-const GAS = 3;
 
-const swap = (x, rin, rout) => {
-  const xin = x * (1 - FEE);
-  return (xin * rout) / (rin + xin);
+// ===== CONFIG =====
+const MIN_LIQUIDITY_USD = 50000; // ignore small pools
+const BASE_TRADE_USD = 1000;     // realistic trade size
+const ETH_PRICE = 3000;
+const GAS_COST_USD = 5;
+
+// ===== SWAP FUNCTION =====
+const swap = (amountIn, reserveIn, reserveOut) => {
+  const amountInWithFee = amountIn * (1 - FEE);
+  return (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee);
 };
 
+// ===== LIQUIDITY ESTIMATE =====
+const getLiquidityUSD = (pool) => {
+  const avg = (pool.reserve0 + pool.reserve1) / 2;
+  return avg * 1; // rough (tokens ~ USD pairs)
+};
+
+// ===== MAIN ENGINE =====
 export const findTriangularArb = (pools) => {
-  const WETH = "0xc02aa39b223fe8d0a0e5c4f27ead9083c756cc2";
-  const start = 0.05;
+  if (!pools || pools.length < 3) return null;
 
-  const map = {};
+  // 🔥 FILTER LOW LIQUIDITY
+  const filtered = pools.filter(p => getLiquidityUSD(p) > MIN_LIQUIDITY_USD);
 
-  for (const p of pools) {
-    if (!map[p.token0]) map[p.token0] = [];
-    if (!map[p.token1]) map[p.token1] = [];
+  if (filtered.length < 3) return null;
 
-    map[p.token0].push(p);
-    map[p.token1].push(p);
-  }
+  let best = null;
 
-  for (const a of map[WETH] || []) {
-    const t1 = a.token0 === WETH ? a.token1 : a.token0;
-    const out1 = swap(start, a.reserve0, a.reserve1);
+  for (let i = 0; i < filtered.length; i++) {
+    for (let j = 0; j < filtered.length; j++) {
+      for (let k = 0; k < filtered.length; k++) {
+        if (i === j || j === k || i === k) continue;
 
-    for (const b of map[t1] || []) {
-      const t2 = b.token0 === t1 ? b.token1 : b.token0;
-      const out2 = swap(out1, b.reserve0, b.reserve1);
+        const p1 = filtered[i];
+        const p2 = filtered[j];
+        const p3 = filtered[k];
 
-      for (const c of map[t2] || []) {
-        const final = c.token0 === t2 ? c.token1 : c.token0;
-        if (final !== WETH) continue;
+        // 🔥 SIMPLE TOKEN MATCHING
+        if (
+          p1.token1 !== p2.token0 ||
+          p2.token1 !== p3.token0 ||
+          p3.token1 !== p1.token0
+        ) continue;
 
-        const out3 = swap(out2, c.reserve0, c.reserve1);
+        // ===== TRADE SIZE =====
+        const start = BASE_TRADE_USD / ETH_PRICE;
 
-        const profit = (out3 - start) * 3000 - GAS;
+        // ===== SIMULATE ROUTE =====
+        const out1 = swap(start, p1.reserve0, p1.reserve1);
+        if (out1 <= 0) continue;
 
-        if (profit > 0.02 && profit < 50) {
-          return {
-            profitUSD: profit,
-            route: `${a.dex} → ${b.dex} → ${c.dex}`
+        const out2 = swap(out1, p2.reserve0, p2.reserve1);
+        if (out2 <= 0) continue;
+
+        const out3 = swap(out2, p3.reserve0, p3.reserve1);
+        if (out3 <= 0) continue;
+
+        const profitETH = out3 - start;
+        const profitUSD = profitETH * ETH_PRICE;
+
+        // ===== AFTER GAS =====
+        const net = profitUSD - GAS_COST_USD;
+
+        if (net <= 0) continue;
+
+        if (!best || net > best.profitUSD) {
+          best = {
+            route: `${p1.dex} → ${p2.dex} → ${p3.dex}`,
+            profitETH,
+            profitUSD: net,
+            sizeETH: start
           };
         }
       }
     }
   }
 
-  return null;
+  return best;
 };
