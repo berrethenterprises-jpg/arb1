@@ -48,10 +48,17 @@ const fetchPools = async () => {
       getSushiPools(provider)
     ]);
 
-    poolCache = [...uni, ...sushi];
-    lastFetch = Date.now();
+    const newPools = [...uni, ...sushi];
 
-    console.log(`📊 Pools refreshed: ${poolCache.length}`);
+    // ✅ VALIDATION GUARD
+    if (newPools.length >= 30) {
+      poolCache = newPools;
+      lastFetch = Date.now();
+
+      console.log(`📊 Pools refreshed: ${poolCache.length}`);
+    } else {
+      console.log(`⚠️ Ignored bad pool fetch: ${newPools.length}`);
+    }
 
     return poolCache;
 
@@ -121,4 +128,4 @@ setInterval(async () => {
   } catch {}
 }, 5000);
 
-console.log("🚀 ARB1 v39 SMART ENGINE");
+console.log("🚀 ARB1 v39.1 VALIDATED ENGINE");
