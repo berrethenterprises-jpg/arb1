@@ -9,7 +9,7 @@ export const createExecutor = async (provider) => {
 
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-  console.log("✅ Executor ready (REALISTIC SIMULATION)");
+  console.log("✅ Executor ready (REALISTIC)");
 
   const ETH_PRICE = 3000;
   const GAS_LIMIT = 220000;
@@ -42,7 +42,7 @@ export const createExecutor = async (provider) => {
           return;
         }
 
-        console.log("✅ REALISTIC TRADE PASSED");
+        console.log("✅ TRADE PASSED");
         console.log({
           route: opp.route,
           gross: profitUSD.toFixed(2),
