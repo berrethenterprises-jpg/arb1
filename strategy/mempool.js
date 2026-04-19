@@ -11,23 +11,39 @@ export const decodeAndSimulate = (tx, pools) => {
 
     console.log(`⚡ Large swap detected: ${ethValue.toFixed(2)} ETH`);
 
-    // 🔥 pick a random pool to simulate realistic impact
-    const index = Math.floor(Math.random() * pools.length);
-    const target = pools[index];
+    if (pools.length < 2) return null;
 
-    const impactFactor = Math.min(0.15, ethValue / 500); // scaled impact
+    // 🔥 pick TWO pools (simulate cross-DEX divergence)
+    const i = Math.floor(Math.random() * pools.length);
+    let j = Math.floor(Math.random() * pools.length);
 
-    const adjustedPools = pools.map((p, i) => {
-      if (i !== index) return p;
+    if (i === j) j = (j + 1) % pools.length;
 
-      return {
-        ...p,
-        reserve0: p.reserve0 * (1 - impactFactor),
-        reserve1: p.reserve1 * (1 + impactFactor)
-      };
+    const impact = Math.min(0.12, ethValue / 400);
+
+    const adjusted = pools.map((p, idx) => {
+      if (idx === i) {
+        // pool gets worse price
+        return {
+          ...p,
+          reserve0: p.reserve0 * (1 - impact),
+          reserve1: p.reserve1 * (1 + impact)
+        };
+      }
+
+      if (idx === j) {
+        // opposite pool gets better price
+        return {
+          ...p,
+          reserve0: p.reserve0 * (1 + impact),
+          reserve1: p.reserve1 * (1 - impact)
+        };
+      }
+
+      return p;
     });
 
-    return adjustedPools;
+    return adjusted;
 
   } catch {
     return null;
