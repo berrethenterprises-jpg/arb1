@@ -1,41 +1,45 @@
 import { ethers } from "ethers";
+import { TOKENS } from "../config/tokens.js";
+
+const FACTORY = "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac";
 
 const ABI = [
-  "function getReserves() view returns (uint112,uint112,uint32)",
-  "function token0() view returns (address)",
-  "function token1() view returns (address)"
-];
-
-const PAIRS = [
-  "0x397FF1542f962076d0BFE58eA045FfA2d347ACa0",
-  "0x06da0fd433C1A5d7a4faa01111c044910A184553",
-  "0x055475920a8c93CfFb64d039A8205F7AcC7722d3",
-  "0xCEfF51756c56CeFFCA006cD410B03FFC46dd3a58"
+  "function getPair(address,address) external view returns (address)",
+  "function getReserves() external view returns (uint112,uint112,uint32)"
 ];
 
 export const getSushiPools = async (provider) => {
-  const calls = PAIRS.map(async (addr) => {
-    try {
-      const c = new ethers.Contract(addr, ABI, provider);
+  const factory = new ethers.Contract(FACTORY, ABI, provider);
 
-      const [reserves, t0, t1] = await Promise.all([
-        c.getReserves(),
-        c.token0(),
-        c.token1()
-      ]);
+  const pools = [];
 
-      return {
-        dex: "SUSHI",
-        token0: t0.toLowerCase(),
-        token1: t1.toLowerCase(),
-        reserve0: Number(ethers.utils.formatEther(reserves[0])),
-        reserve1: Number(ethers.utils.formatEther(reserves[1]))
-      };
+  for (let i = 0; i < TOKENS.length; i++) {
+    for (let j = i + 1; j < TOKENS.length; j++) {
+      try {
+        const t0 = TOKENS[i];
+        const t1 = TOKENS[j];
 
-    } catch {
-      return null;
+        const pairAddress = await factory.getPair(t0.address, t1.address);
+        if (pairAddress === ethers.constants.AddressZero) continue;
+
+        const pair = new ethers.Contract(pairAddress, ABI, provider);
+
+        const [r0, r1] = await pair.getReserves();
+
+        if (!r0 || !r1) continue;
+
+        pools.push({
+          dex: "SUSHI",
+          token0: t0.address,
+          token1: t1.address,
+          reserve0: Number(ethers.utils.formatUnits(r0, t0.decimals)),
+          reserve1: Number(ethers.utils.formatUnits(r1, t1.decimals))
+        });
+
+      } catch {}
     }
-  });
+  }
 
-  return (await Promise.all(calls)).filter(Boolean);
+  console.log(`🍣 SUSHI pools: ${pools.length}`);
+  return pools;
 };
