@@ -21,7 +21,9 @@ const fetchPools = async () => {
     getSushiPools(provider)
   ]);
 
-  return [...uni, ...sushi];
+  const pools = [...uni, ...sushi];
+  console.log(`📊 Pools: ${pools.length}`);
+  return pools;
 };
 
 // ===== MEMPOOL HANDLER =====
@@ -30,21 +32,20 @@ const handleTx = async (txHash) => {
     const tx = await provider.getTransaction(txHash);
     if (!tx || !tx.to) return;
 
-    // 🔥 Filter for swaps (basic heuristic)
-    if (!tx.data || tx.data.length < 10) return;
+    // 🔥 FILTER: ignore tiny noise txs
+    if (tx.value && tx.value.lt(ethers.utils.parseEther("0.1"))) return;
 
-    console.log("⚡ Mempool tx detected");
+    console.log("⚡ Mempool tx");
 
     const pools = await fetchPools();
     if (!pools.length) return;
 
-    // 🔥 simulate impact
-    const adjustedPools = simulateMempoolImpact(pools, tx);
+    const adjusted = simulateMempoolImpact(pools);
 
-    const opp = findTriangularArb(adjustedPools);
+    const opp = findTriangularArb(adjusted);
     if (!opp) return;
 
-    console.log("🔥 MEMPOOL ARB FOUND");
+    console.log("🔥 ARB FOUND");
     console.log(opp);
 
     const res = await executor.execute(opp);
@@ -60,4 +61,4 @@ const handleTx = async (txHash) => {
 
 provider.on("pending", handleTx);
 
-console.log("🚀 ARB1 v35 MEMPOOL ENGINE");
+console.log("🚀 ARB1 v36 SAFE EXECUTION ENGINE");
