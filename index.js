@@ -24,7 +24,7 @@ const executor = await createExecutor(provider);
 let pnl = 0;
 let trades = 0;
 
-// ===== POOL CACHE (LOCKED) =====
+// ===== CACHE =====
 let poolCache = [];
 let lastFetch = 0;
 let fetching = false;
@@ -32,15 +32,11 @@ let fetching = false;
 const fetchPools = async () => {
   const now = Date.now();
 
-  // ✅ return cached pools if fresh
   if (now - lastFetch < 10000 && poolCache.length) {
     return poolCache;
   }
 
-  // 🔥 prevent parallel fetches
-  if (fetching) {
-    return poolCache;
-  }
+  if (fetching) return poolCache;
 
   try {
     fetching = true;
@@ -67,7 +63,7 @@ const fetchPools = async () => {
   }
 };
 
-// ===== MEMPOOL HANDLER =====
+// ===== MEMPOOL =====
 const handleTx = async (txHash) => {
   try {
     const tx = await provider.getTransaction(txHash);
@@ -96,12 +92,11 @@ const handleTx = async (txHash) => {
   } catch {}
 };
 
-// ===== MEMPOOL SUBSCRIPTION =====
 if (RPC.startsWith("wss://")) {
   provider.on("pending", handleTx);
 }
 
-// ===== FALLBACK LOOP =====
+// ===== FALLBACK =====
 setInterval(async () => {
   try {
     console.log("🔄 Fallback tick...");
@@ -110,16 +105,20 @@ setInterval(async () => {
     if (!pools.length) return;
 
     const opp = findTriangularArb(pools);
-
-    if (!opp) {
-      console.log("⏳ No fallback opportunity");
-      return;
-    }
+    if (!opp) return;
 
     console.log("🔥 FALLBACK ARB");
     console.log(opp);
 
+    const res = await executor.execute(opp);
+
+    if (res?.success) {
+      pnl += res.profit;
+      trades++;
+      console.log(`📈 PNL: $${pnl.toFixed(2)} | Trades: ${trades}`);
+    }
+
   } catch {}
 }, 5000);
 
-console.log("🚀 ARB1 v37.2 LOCKED ENGINE");
+console.log("🚀 ARB1 v39 SMART ENGINE");
