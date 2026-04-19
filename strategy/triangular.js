@@ -5,7 +5,12 @@ const TRADE_SIZE_USD = 2000;
 const ETH_PRICE = 3000;
 const GAS_COST = 3;
 
+// 🔥 HARD REALITY LIMITS
+const MAX_PROFIT_MULTIPLIER = 1.05; // max 5% gain per cycle
+
 const swap = (amountIn, rin, rout) => {
+  if (rin <= 0 || rout <= 0) return 0;
+
   const ain = amountIn * (1 - FEE);
   return (ain * rout) / (rin + ain);
 };
@@ -14,7 +19,6 @@ const liquidityUSD = (p) => {
   return (p.reserve0 + p.reserve1) / 2;
 };
 
-// 🔥 normalize direction
 const getSwap = (pool, fromToken) => {
   if (pool.token0 === fromToken) {
     return {
@@ -43,55 +47,64 @@ export const findTriangularArb = (pools) => {
 
   let best = null;
 
-  // 🔥 start token (bias toward WETH)
-  const startToken = valid[0].token0;
-
   for (let i = 0; i < valid.length; i++) {
     const p1 = valid[i];
-
-    const s1 = getSwap(p1, startToken);
-    if (!s1) continue;
 
     for (let j = 0; j < valid.length; j++) {
       if (j === i) continue;
 
       const p2 = valid[j];
-      const s2 = getSwap(p2, s1.outToken);
-      if (!s2) continue;
 
       for (let k = 0; k < valid.length; k++) {
         if (k === i || k === j) continue;
 
         const p3 = valid[k];
-        const s3 = getSwap(p3, s2.outToken);
-        if (!s3) continue;
 
-        if (s3.outToken !== startToken) continue;
+        // 🔥 try both directions
+        const tokens = [p1.token0, p1.token1];
 
-        const startETH = TRADE_SIZE_USD / ETH_PRICE;
+        for (const startToken of tokens) {
+          const s1 = getSwap(p1, startToken);
+          if (!s1) continue;
 
-        const o1 = swap(startETH, s1.rin, s1.rout);
-        if (o1 <= 0) continue;
+          const s2 = getSwap(p2, s1.outToken);
+          if (!s2) continue;
 
-        const o2 = swap(o1, s2.rin, s2.rout);
-        if (o2 <= 0) continue;
+          const s3 = getSwap(p3, s2.outToken);
+          if (!s3) continue;
 
-        const o3 = swap(o2, s3.rin, s3.rout);
-        if (o3 <= 0) continue;
+          if (s3.outToken !== startToken) continue;
 
-        const profitETH = o3 - startETH;
-        const profitUSD = profitETH * ETH_PRICE;
+          const startETH = TRADE_SIZE_USD / ETH_PRICE;
 
-        const net = profitUSD - GAS_COST;
-        if (net <= 0) continue;
+          const o1 = swap(startETH, s1.rin, s1.rout);
+          if (o1 <= 0) continue;
 
-        if (!best || net > best.profitUSD) {
-          best = {
-            route: `${p1.dex} → ${p2.dex} → ${p3.dex}`,
-            profitETH,
-            profitUSD: net,
-            sizeETH: startETH
-          };
+          const o2 = swap(o1, s2.rin, s2.rout);
+          if (o2 <= 0) continue;
+
+          const o3 = swap(o2, s3.rin, s3.rout);
+          if (o3 <= 0) continue;
+
+          // 🔥 sanity check
+          const ratio = o3 / startETH;
+
+          if (ratio > MAX_PROFIT_MULTIPLIER) continue; // kill fake arb
+
+          const profitETH = o3 - startETH;
+          const profitUSD = profitETH * ETH_PRICE;
+
+          const net = profitUSD - GAS_COST;
+          if (net <= 0) continue;
+
+          if (!best || net > best.profitUSD) {
+            best = {
+              route: `${p1.dex} → ${p2.dex} → ${p3.dex}`,
+              profitETH,
+              profitUSD: net,
+              sizeETH: startETH
+            };
+          }
         }
       }
     }
